@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="hero" aria-label="整机概览">
+    <article class="card hero__main" id="system-card" data-quality="unavailable">
+      <div class="card__head card__head--top">
+        <div>
+          <p class="eyebrow">整机功率</p>
+          <div class="hero__value">
+            <span id="sys-value">—</span>
+            <span class="hero__unit" id="sys-unit">W</span>
+          </div>
+        </div>
+        <div class="hero__badges">
+          <span id="sys-mode" class="pill pill--muted">等待数据</span>
+          <span id="sys-badge"></span>
+        </div>
+      </div>
+      <p class="hero__note" id="sys-note">等待第一个采样…</p>
+      <p class="provenance" id="sys-source"></p>
+    </article>
+
+    <div class="hero__side">
+      <article class="card metric">
+        <div class="metric__head"><span>CPU</span><span id="cpu-badge"></span></div>
+        <div class="metric__value"><span id="cpu-value">—</span><span id="cpu-unit">W</span></div>
+        <p class="muted small" id="cpu-sub">等待数据</p>
+      </article>
+
+      <article class="card metric">
+        <div class="metric__head"><span>GPU</span><span id="gpu-badge"></span></div>
+        <div class="metric__value"><span id="gpu-value">—</span><span id="gpu-unit">W</span></div>
+        <p class="muted small" id="gpu-sub">等待数据</p>
+      </article>
+
+      <article class="card metric">
+        <div class="metric__head"><span>其他部件</span><span id="other-badge"></span></div>
+        <div class="metric__value"><span id="other-value">—</span><span id="other-unit">W</span></div>
+        <p class="muted small" id="other-sub">配置常量，不含 PSU 损耗</p>
+      </article>
+
+      <article class="card metric">
+        <div class="metric__head"><span>区间电能</span><span id="energy-badge"></span></div>
+        <div class="metric__value"><span id="energy-value">—</span><span id="energy-unit">Wh</span></div>
+        <p class="muted small" id="energy-sub">需要两个样本才能积分</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="grid grid--chart-status" aria-label="曲线与状态">
+    <article class="card chart-card">
+      <div class="card__head">
+        <div>
+          <p class="eyebrow">功率</p>
+          <h2>实时曲线</h2>
+        </div>
+        <div class="range" data-range-group="main" role="group" aria-label="时间范围">
+          <button type="button" data-window="5m" class="is-active">5 分钟</button>
+          <button type="button" data-window="15m">15 分钟</button>
+          <button type="button" data-window="1h">1 小时</button>
+          <button type="button" data-window="6h">6 小时</button>
+          <button type="button" data-window="24h">24 小时</button>
+        </div>
+      </div>
+      <div id="power-chart" class="chart" role="img" aria-label="系统、CPU、GPU 功率随时间变化"></div>
+      <p class="chart-meta muted small" id="chart-meta">加载中…</p>
+    </article>
+
+    <article class="card">
+      <div class="card__head">
+        <div>
+          <p class="eyebrow">运行状态</p>
+          <h2>系统与数据</h2>
+        </div>
+        <span id="db-state" class="pill pill--muted">—</span>
+      </div>
+      <div id="gpu-alert" class="alert" hidden></div>
+      <div id="meter-alert" class="alert" hidden></div>
+      <dl class="kv" id="status-list"></dl>
+      <div class="health-block">
+        <span class="muted small">采集器</span>
+        <div class="chips" id="health-chips"></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="grid grid--3" aria-label="主机资源">
+    <article class="card">
+      <div class="card__head">
+        <div><p class="eyebrow">内存</p><h2>内存使用</h2></div>
+        <span id="memory-badge"></span>
+      </div>
+      <div class="big-number"><span id="mem-percent">—</span><span class="big-number__unit">%</span></div>
+      <div class="bar" aria-hidden="true"><span id="mem-bar"></span></div>
+      <dl class="kv kv--compact">
+        <dt>已用</dt><dd id="mem-used">—</dd>
+        <dt>总量</dt><dd id="mem-total">—</dd>
+        <dt>可用</dt><dd id="mem-available">—</dd>
+        <dt>Swap</dt><dd id="swap-used">—</dd>
+      </dl>
+    </article>
+
+    <article class="card">
+      <div class="card__head">
+        <div><p class="eyebrow">存储</p><h2>磁盘</h2></div>
+      </div>
+      <div class="list" id="disks-body">
+        <p class="muted small">等待数据…</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card__head">
+        <div><p class="eyebrow">网络</p><h2>接口吞吐</h2></div>
+      </div>
+      <div class="list" id="network-body">
+        <p class="muted small">等待数据…</p>
+      </div>
+    </article>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="/static/assets/pages/dashboard.js"></script>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="hero" aria-label="CPU 概览">
+    <article class="card hero__main" id="cpu-card" data-quality="unavailable">
+      <div class="card__head card__head--top">
+        <div>
+          <p class="eyebrow">CPU 总功率</p>
+          <div class="hero__value">
+            <span id="cpu-power">—</span>
+            <span class="hero__unit" id="cpu-power-unit">W</span>
+          </div>
+        </div>
+        <div class="hero__badges"><span id="cpu-power-badge"></span></div>
+      </div>
+      <p class="hero__note" id="cpu-model">等待数据…</p>
+      <p class="provenance" id="cpu-source"></p>
+    </article>
+
+    <div class="hero__side">
+      <article class="card metric">
+        <div class="metric__head"><span>使用率</span><span id="cpu-usage-badge"></span></div>
+        <div class="metric__value"><span id="cpu-usage">—</span><span id="cpu-usage-unit">%</span></div>
+        <p class="muted small" id="cpu-usage-sub">全部核心平均</p>
+      </article>
+
+      <article class="card metric">
+        <div class="metric__head"><span>最高温度</span><span id="cpu-temp-badge"></span></div>
+        <div class="metric__value"><span id="cpu-temp">—</span><span id="cpu-temp-unit">°C</span></div>
+        <p class="muted small" id="cpu-temp-sub">hwmon coretemp</p>
+      </article>
+
+      <article class="card metric">
+        <div class="metric__head"><span>插槽</span></div>
+        <div class="metric__value"><span id="cpu-sockets">—</span><span class="metric__unit">socket</span></div>
+        <p class="muted small" id="cpu-cores">—</p>
+      </article>
+
+      <article class="card metric">
+        <div class="metric__head"><span>采样时间</span></div>
+        <div class="metric__value metric__value--small"><span id="cpu-timestamp">—</span></div>
+        <p class="muted small">每 1 秒刷新</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="grid grid--chart-wide" aria-label="CPU 曲线">
+    <article class="card chart-card">
+      <div class="card__head">
+        <div><p class="eyebrow">CPU 功率</p><h2>历史曲线</h2></div>
+        <div class="range" data-range-group="cpu" role="group" aria-label="时间范围">
+          <button type="button" data-window="5m" class="is-active">5 分钟</button>
+          <button type="button" data-window="15m">15 分钟</button>
+          <button type="button" data-window="1h">1 小时</button>
+          <button type="button" data-window="6h">6 小时</button>
+          <button type="button" data-window="24h">24 小时</button>
+        </div>
+      </div>
+      <div id="cpu-chart" class="chart" role="img" aria-label="CPU 总功率随时间变化"></div>
+      <p class="chart-meta muted small" id="cpu-chart-meta">加载中…</p>
+    </article>
+  </section>
+
+  <section class="grid grid--2" aria-label="CPU package">
+    <article class="card">
+      <div class="card__head">
+        <div><p class="eyebrow">Package</p><h2>每个插槽</h2></div>
+      </div>
+      <div id="package-grid" class="package-grid">
+        <p class="muted small">等待数据…</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card__head">
+        <div><p class="eyebrow">说明</p><h2>数据来源</h2></div>
+      </div>
+      <div id="cpu-alert" class="alert" hidden></div>
+      <dl class="kv">
+        <dt>功率</dt><dd>RAPL package 计数器（只读 helper）</dd>
+        <dt>温度</dt><dd>hwmon coretemp</dd>
+        <dt>频率</dt><dd>cpufreq / procfs</dd>
+        <dt>使用率</dt><dd>psutil per-CPU 差值</dd>
+        <dt>质量</dt><dd>Measured = 直接读取；Unavailable = 无法读取，不以 0 代替</dd>
+      </dl>
+      <p class="muted small" id="cpu-note">RAPL 计数器回绕已在服务端处理。</p>
+    </article>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="/static/assets/pages/cpu.js"></script>
+{% endblock %}

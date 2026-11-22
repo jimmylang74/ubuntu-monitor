@@ -1,0 +1,14 @@
+#!/bin/sh
+# Read Intel RAPL energy counters as root and emit tab-separated records.
+# Installed root-owned; invoked by the power-monitor service user via sudo -n.
+set -eu
+
+for d in /sys/class/powercap/intel-rapl:*; do
+    [ -d "$d" ] || continue
+    id=${d##*/}
+    name=$(cat "$d/name" 2>/dev/null || printf '')
+    energy=$(cat "$d/energy_uj" 2>/dev/null || printf '')
+    max=$(cat "$d/max_energy_range_uj" 2>/dev/null || printf '')
+    enabled=$(cat "$d/enabled" 2>/dev/null || printf '')
+    printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$name" "$energy" "$max" "$enabled"
+done

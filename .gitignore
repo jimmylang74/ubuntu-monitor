@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+data/*.db
+data/*.db-wal
+data/*.db-shm
+backups/
+logs/*.log
+first-time-development-2026-11-18.md
+
+

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="page-heading">
+    <div>
+      <p class="eyebrow">Energy</p>
+      <h1>能耗与费用</h1>
+      <p class="muted" id="energy-meta">加载中…</p>
+    </div>
+    <span class="pill pill--muted" id="price-pill">电价 —</span>
+  </section>
+
+  <section class="card live-strip" aria-label="当前功率">
+    <div>
+      <p class="eyebrow">当前系统功率</p>
+      <div class="live-strip__value"><span id="live-power">—</span><span id="live-unit">W</span></div>
+    </div>
+    <div class="live-strip__badges">
+      <span id="live-badge"></span>
+      <span class="pill pill--muted" id="live-scope">—</span>
+    </div>
+    <p class="muted small" id="live-note">等待实时数据…</p>
+  </section>
+
+  <section class="grid grid--4" aria-label="能耗汇总">
+    <article class="card energy-card">
+      <div class="card__head"><span class="eyebrow">今日</span><span id="today-badge"></span></div>
+      <div class="big-number"><span id="today-kwh">—</span><span class="big-number__unit">kWh</span></div>
+      <p class="muted small" id="today-cost">费用 —</p>
+      <p class="muted small" id="today-detail"></p>
+    </article>
+
+    <article class="card energy-card">
+      <div class="card__head"><span class="eyebrow">昨日</span><span id="yesterday-badge"></span></div>
+      <div class="big-number"><span id="yesterday-kwh">—</span><span class="big-number__unit">kWh</span></div>
+      <p class="muted small" id="yesterday-cost">费用 —</p>
+      <p class="muted small" id="yesterday-detail"></p>
+    </article>
+
+    <article class="card energy-card">
+      <div class="card__head"><span class="eyebrow">最近 7 天</span><span id="week-badge"></span></div>
+      <div class="big-number"><span id="week-kwh">—</span><span class="big-number__unit">kWh</span></div>
+      <p class="muted small" id="week-cost">费用 —</p>
+      <p class="muted small" id="week-detail"></p>
+    </article>
+
+    <article class="card energy-card">
+      <div class="card__head"><span class="eyebrow">最近 30 天</span><span id="month-badge"></span></div>
+      <div class="big-number"><span id="month-kwh">—</span><span class="big-number__unit">kWh</span></div>
+      <p class="muted small" id="month-cost">费用 —</p>
+      <p class="muted small" id="month-detail"></p>
+    </article>
+  </section>
+
+  <section class="grid grid--2" aria-label="能耗图表">
+    <article class="card chart-card">
+      <div class="card__head">
+        <div><p class="eyebrow">Daily</p><h2>每日能耗</h2></div>
+        <span class="muted small">最近 30 天</span>
+      </div>
+      <div id="daily-chart" class="chart" role="img" aria-label="最近 30 天每日能耗柱状图"></div>
+      <p class="chart-meta muted small" id="daily-meta">加载中…</p>
+    </article>
+
+    <article class="card chart-card">
+      <div class="card__head">
+        <div><p class="eyebrow">Hourly</p><h2>每小时平均功耗</h2></div>
+        <span id="hourly-badge"></span>
+      </div>
+      <div id="hourly-chart" class="chart" role="img" aria-label="最近 24 小时每小时平均功耗柱状图"></div>
+      <p class="chart-meta muted small" id="hourly-meta">加载中…</p>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card__head">
+      <div><p class="eyebrow">说明</p><h2>口径与费用</h2></div>
+    </div>
+    <dl class="kv">
+      <dt>能耗口径</dt>
+      <dd>系统功率的区间积分；估算模式为 DC 组件之和，不含 PSU 转换损耗。</dd>
+      <dt>日期边界</dt>
+      <dd>按 <span id="timezone">—</span> 的本地日期切分“今日 / 昨日”。</dd>
+      <dt>费用</dt>
+      <dd>费用 = kWh × 电价；电价未启用时显示 “—”，不会用 0 代替。</dd>
+      <dt>缺失数据</dt>
+      <dd>缺测样本不会插值；质量徽标会标记 Estimated / Unavailable。</dd>
+    </dl>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="/static/assets/pages/energy.js"></script>
+{% endblock %}

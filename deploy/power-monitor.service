@@ -1,0 +1,33 @@
+[Unit]
+Description=Ubuntu Power Monitor
+Documentation=file://@ROOT@/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@ROOT@
+Environment=PM_CONFIG=@ROOT@/config/config.yaml
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@ROOT@/scripts/run.sh web
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGINT
+SyslogIdentifier=power-monitor
+StandardOutput=journal
+StandardError=journal
+
+# Logs go to journald by default.  If server.log_file is configured instead,
+# make sure that path is included in ReadWritePaths.
+ReadWritePaths=@ROOT@/data @ROOT@/logs
+
+# The read-only RAPL helper is invoked through the scoped sudoers rule, so
+# NoNewPrivileges must stay disabled.
+PrivateTmp=true
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

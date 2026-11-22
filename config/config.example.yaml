@@ -1,0 +1,116 @@
+# Ubuntu Power Monitor 配置示例
+# 复制为 config/config.yaml 后按需修改。
+# 加载优先级：默认值 < config.yaml < 环境变量 PM_*
+
+server:
+  host: 0.0.0.0
+  port: 8010
+  log_level: info
+  # 留空 = stderr，由 systemd journald 收集并轮转
+  # 设置路径则使用大小受限的轮转文件（相对路径基于项目根目录）
+  log_file: ""
+  log_max_bytes: 10485760
+  log_backup_count: 5
+  # 能耗按哪个时区切分“今天/昨天”，local 表示系统时区
+  timezone: local
+
+collector:
+  cpu_interval: 1
+  gpu_interval: 1
+  memory_interval: 2
+  disk_interval: 5
+  network_interval: 1
+  system_interval: 1
+  # 单次采集超时（秒），超时后本轮标记 degraded，不阻塞事件循环
+  timeout: 2.0
+
+gpu:
+  # pynvml 初始化失败时是否允许回退到 nvidia-smi
+  fallback_nvidia_smi: true
+  # 枚举/驱动恢复检查周期
+  reinit_interval: 10
+  # 风扇不可用（Tesla）时返回 unavailable，而不是 0
+  expose_fan: true
+
+rapl:
+  # 单 package 合理功率上限，用于识别计数器重置
+  max_plausible_w: 1500
+  # 最小采样间隔，低于此值跳过本轮
+  min_interval_s: 0.2
+
+database:
+  type: sqlite
+  path: data/power_monitor.db
+  # 原始样本写库间隔（秒），采集频率不受影响
+  write_interval: 1
+  busy_timeout_ms: 5000
+  wal: true
+
+power:
+  # auto: 电表健康用实测，否则估算
+  # estimated: 只用估算
+  # external: 电表优先，离线时仍按 PRD 自动退回估算并明示
+  mode: auto
+  # 主板/内存/风扇/磁盘/网卡等未直接测量部件的估算值（W）
+  # 不含 PSU 转换损耗；本机（双路 + 双 V100）建议 150–200
+  estimated_other_power_w: 150
+  # true: CPU 或任一 GPU 缺失时，整机估算为 unavailable（不输出误导性总和）
+  # false: 输出可用部分之和，并在 missing 中列出缺失组件
+  strict_estimate: true
+
+  external_meter:
+    enabled: false
+    type: shelly          # shelly | modbus | http_pdu
+    timeout: 2.0
+    # 轮询间隔（秒）；连续失败达到 failover_after 后退回估算
+    interval: 1.0
+    failover_after: 3
+
+    shelly:
+      url: "http://192.168.1.60"
+      generation: auto    # auto | gen1 | gen2
+
+    # modbus:
+    #   host: 192.168.1.50
+    #   port: 502
+    #   unit_id: 1
+    #   function_code: 3
+    #   register: 0
+    #   register_type: float32   # uint32 | float32
+    #   word_order: big          # big | little
+    #   scale: 1.0
+    #   min_interval_s: 1.0
+
+    # 通用 JSON-over-HTTP PDU（只读）
+    # http_pdu:
+    #   url: "http://192.168.1.70/status"
+    #   power_path: power          # 支持 a.b.0 形式
+    #   energy_path: energy.total  # kWh
+    #   scale: 1.0
+    #   energy_scale: 1.0
+
+network:
+  # 通配符过滤，默认隐藏回环与 Docker/KVM 虚拟网卡
+  exclude_interfaces:
+    - "lo"
+    - "docker*"
+    - "br-*"
+    - "veth*"
+    - "virbr*"
+    - "tun*"
+    - "tap*"
+  # 若设置，则只采集这些接口（优先于 exclude）
+  include_interfaces: []
+
+electricity:
+  enabled: false
+  price_per_kwh: 0.8
+  currency: CNY
+
+history:
+  raw_retention_days: 7
+  minute_retention_days: 90
+  hourly_retention_days: 365
+  cleanup_hour: 3
+  # 历史接口最多返回点数
+  max_points: 2000

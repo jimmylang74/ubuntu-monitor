@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="page-heading">
+    <div>
+      <p class="eyebrow">NVIDIA</p>
+      <h1>GPU 遥测</h1>
+      <p class="muted" id="gpu-summary">等待数据…</p>
+    </div>
+    <div class="heading-badges">
+      <span class="pill pill--muted" id="gpu-available">—</span>
+      <span class="pill pill--muted" id="gpu-driver">NVML</span>
+    </div>
+  </section>
+
+  <div id="gpu-alert" class="alert" hidden></div>
+
+  <section class="grid grid--2" id="gpu-grid" aria-label="GPU 卡片">
+    <p class="muted">等待数据…</p>
+  </section>
+
+  <section class="grid grid--chart-wide" aria-label="GPU 曲线">
+    <article class="card chart-card">
+      <div class="card__head">
+        <div><p class="eyebrow">GPU 功率</p><h2>历史曲线</h2></div>
+        <div class="range" data-range-group="gpu" role="group" aria-label="时间范围">
+          <button type="button" data-window="5m" class="is-active">5 分钟</button>
+          <button type="button" data-window="15m">15 分钟</button>
+          <button type="button" data-window="1h">1 小时</button>
+          <button type="button" data-window="6h">6 小时</button>
+          <button type="button" data-window="24h">24 小时</button>
+        </div>
+      </div>
+      <div id="gpu-chart" class="chart" role="img" aria-label="每张 GPU 的功率随时间变化"></div>
+      <p class="chart-meta muted small" id="gpu-chart-meta">加载中…</p>
+    </article>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="/static/assets/pages/gpu.js"></script>
+{% endblock %}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>{{ title }} · Power Monitor</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/assets/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Power Monitor 总览">
+      <span class="brand__mark" aria-hidden="true">⚡</span>
+      <span class="brand__text">
+        <strong>Power Monitor</strong>
+        <small>Ubuntu server telemetry</small>
+      </span>
+    </a>
+
+    <nav class="nav" aria-label="主导航">
+      <a href="/" class="{{ 'is-active' if page == 'dashboard' else '' }}">总览</a>
+      <a href="/cpu" class="{{ 'is-active' if page == 'cpu' else '' }}">CPU</a>
+      <a href="/gpu" class="{{ 'is-active' if page == 'gpu' else '' }}">GPU</a>
+      <a href="/energy" class="{{ 'is-active' if page == 'energy' else '' }}">能耗</a>
+    </nav>
+
+    <div class="topbar__status">
+      <span class="topbar__update" id="last-update" title="最后收到数据的时间">等待数据</span>
+      <span class="conn" id="conn" data-state="connecting" role="status" aria-live="polite">
+        <span class="conn__dot" aria-hidden="true"></span>
+        <span id="conn-text">Connecting</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="page" id="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>Ubuntu Power Monitor v{{ version }}</span>
+    <span>所有功耗值均带有质量与来源标记 · 不可用值显示为 “—”</span>
+  </footer>
+
+  <noscript>
+    <div class="noscript">本页面需要启用 JavaScript 才能显示实时数据。</div>
+  </noscript>
+
+  <script src="/static/vendor/echarts.min.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
