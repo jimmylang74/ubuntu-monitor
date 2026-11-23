@@ -286,3 +286,14 @@ power:
 
 系统功率额外携带 `scope`：`estimated` 的 `scope=dc_components`（DC 组件之和，不含 PSU 损耗）；
 只有外部电表读数才是 `scope=wall` 的实测墙插功率。两者不可直接比较。
+
+## Commit 约定
+
+提交信息必须包含本次变更的文件列表，按 `Added` / `Modified` / `Deleted` 分组列在 `Files:` 段中。
+仓库提供 `scripts/git/prepare-commit-msg` 钩子自动生成该列表；克隆后启用一次：
+
+```bash
+git config core.hooksPath scripts/git
+```
+
+启用后正常执行 `git commit` 即可，无需手动维护文件列表。

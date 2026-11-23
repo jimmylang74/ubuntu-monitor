@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Append the staged file list to every commit message.
+# Enabled with: git config core.hooksPath scripts/git
+
+set -euo pipefail
+
+commit_msg_file=${1:?missing commit message path}
+commit_source=${2:-}
+
+# Merge/squash messages and already-generated lists are left untouched.
+if [[ "$commit_source" == "merge" || "$commit_source" == "squash" ]]; then
+  exit 0
+fi
+if grep -q '^Files:$' "$commit_msg_file"; then
+  exit 0
+fi
+
+mapfile -t added < <(git diff --cached --name-only --diff-filter=A)
+mapfile -t modified < <(git diff --cached --name-only --diff-filter=M)
+mapfile -t deleted < <(git diff --cached --name-only --diff-filter=D)
+
+if (( ${#added[@]} == 0 && ${#modified[@]} == 0 && ${#deleted[@]} == 0 )); then
+  exit 0
+fi
+
+{
+  printf '\nFiles:\n'
+  if (( ${#added[@]} > 0 )); then
+    printf '  Added:\n'
+    printf '    - %s\n' "${added[@]}"
+  fi
+  if (( ${#modified[@]} > 0 )); then
+    printf '  Modified:\n'
+    printf '    - %s\n' "${modified[@]}"
+  fi
+  if (( ${#deleted[@]} > 0 )); then
+    printf '  Deleted:\n'
+    printf '    - %s\n' "${deleted[@]}"
+  fi
+} >> "$commit_msg_file"
