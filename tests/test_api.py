@@ -244,6 +244,17 @@ def test_energy_endpoints(client) -> None:
     assert monthly.status_code == 200
     assert monthly.json()["window"] == "30d"
 
+    yearly = http.get("/api/v1/energy/yearly", params={"year": 2020})
+    assert yearly.status_code == 200
+    payload = yearly.json()
+    assert payload["year"] == 2020
+    assert [entry["month"] for entry in payload["months"]] == list(range(1, 13))
+    assert 2020 in payload["years"]
+    assert all(entry["cost"] is None for entry in payload["months"])
+
+    invalid_yearly = http.get("/api/v1/energy/yearly", params={"year": 1960})
+    assert invalid_yearly.status_code == 422
+
 
 def test_config_and_diagnostics(client) -> None:
     http, _ = client

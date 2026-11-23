@@ -1,6 +1,8 @@
 import {
   apiGet,
   barChartOption,
+  clear,
+  createEl,
   fetchHistory,
   formatClock,
   formatCurrency,
@@ -31,6 +33,10 @@ function componentLabel(name) {
 const state = {
   summary: null,
   config: null,
+  monthlyCost: null,
+  monthlyCostYear: null,
+  monthlyCostChart: null,
+  monthlyCostRequest: 0,
   dailyChart: null,
   hourlyChart: null,
   refreshTimer: null,
@@ -73,11 +79,21 @@ function seriesBadge(series, payload) {
 /* ------------------------------------------------------------------ summary */
 
 function priceEnabled() {
-  return Boolean(state.config?.electricity?.enabled);
+  if (typeof state.config?.electricity?.enabled === "boolean") return state.config.electricity.enabled;
+  if (typeof state.monthlyCost?.electricity_enabled === "boolean") {
+    return state.monthlyCost.electricity_enabled;
+  }
+  if (typeof state.summary?.electricity_enabled === "boolean") return state.summary.electricity_enabled;
+  return false;
 }
 
 function currency() {
-  return state.summary?.currency || state.config?.electricity?.currency || "";
+  return (
+    state.summary?.currency ||
+    state.monthlyCost?.currency ||
+    state.config?.electricity?.currency ||
+    ""
+  );
 }
 
 function renderPrice() {
@@ -98,6 +114,17 @@ function costLabel(entry) {
   return entry?.cost === null || entry?.cost === undefined
     ? "费用 —"
     : `费用 ${formatCurrency(entry.cost, currency())}`;
+}
+
+function monthlyCostLabel(entry) {
+  if (!priceEnabled()) return "—（电价未启用）";
+  return isNumber(entry?.cost) ? formatCurrency(entry.cost, currency()) : "—";
+}
+
+function qualityText(quality) {
+  if (quality === "measured") return "实测";
+  if (quality === "estimated") return "估算";
+  return "无数据";
 }
 
 function detailLabel(entry) {
@@ -235,6 +262,101 @@ async function loadDaily() {
   }
 }
 
+/* ------------------------------------------------------------------ yearly */
+
+function ensureMonthlyCostChart() {
+  if (state.monthlyCostChart) return state.monthlyCostChart;
+  const element = document.getElementById("monthly-cost-chart");
+  if (!element) return null;
+  state.monthlyCostChart = mountChart(element);
+  return state.monthlyCostChart;
+}
+
+function renderYearOptions(years, selected) {
+  const select = document.getElementById("monthly-cost-year");
+  if (!select) return;
+  const values = Array.isArray(years) ? years.filter((year) => Number.isInteger(year)) : [];
+  if (!values.includes(selected)) values.push(selected);
+  values.sort((left, right) => right - left);
+  select.replaceChildren(
+    ...values.map((year) => {
+      const option = createEl("option", "", `${year} 年`);
+      option.value = String(year);
+      option.selected = year === selected;
+      return option;
+    }),
+  );
+  select.value = String(selected);
+}
+
+function renderMonthlyCostRows(months) {
+  const body = document.getElementById("monthly-cost-body");
+  if (!body) return;
+  const rows = (Array.isArray(months) ? months : []).map((entry) => {
+    const row = createEl("tr");
+    row.append(createEl("td", "", `${entry.month} 月`));
+    row.append(createEl("td", "", isNumber(entry.energy_kwh) ? formatFixed(entry.energy_kwh, 2) : "—"));
+    row.append(createEl("td", "", monthlyCostLabel(entry)));
+    row.append(createEl("td", "", qualityText(entry.quality)));
+    return row;
+  });
+  if (rows.length === 0) {
+    const row = createEl("tr");
+    const cell = createEl("td", "", "暂无数据");
+    cell.colSpan = 4;
+    row.append(cell);
+    rows.push(row);
+  }
+  clear(body);
+  body.append(...rows);
+}
+
+async function loadMonthlyCost() {
+  const requestId = (state.monthlyCostRequest += 1);
+  const params = state.monthlyCostYear ? { year: state.monthlyCostYear } : null;
+  try {
+    const chart = ensureMonthlyCostChart();
+    const payload = await apiGet("/api/v1/energy/yearly", params);
+    if (requestId !== state.monthlyCostRequest) return;
+    state.monthlyCost = payload;
+    state.monthlyCostYear = payload.year;
+
+    const months = Array.isArray(payload.months) ? payload.months : [];
+    const values = months.map((entry) =>
+      priceEnabled() && isNumber(entry.cost) ? entry.cost : null,
+    );
+    renderYearOptions(payload.years, payload.year);
+    if (chart) {
+      chart.instance.setOption(
+        barChartOption({
+          categories: months.map((entry) => `${entry.month} 月`),
+          values,
+          unit: payload.currency || currency() || "CNY",
+          digits: 2,
+        }),
+        { notMerge: true, lazyUpdate: true },
+      );
+    }
+    renderMonthlyCostRows(months);
+
+    const filled = values.filter((value) => isNumber(value)).length;
+    text(
+      document.getElementById("monthly-cost-meta"),
+      `${payload.year} 年 · ${filled}/${months.length} 月有费用数据 · 时区 ${
+        payload.timezone || "—"
+      } · ${
+        priceEnabled()
+          ? `电价 ${formatCurrency(payload.price_per_kwh, payload.currency)} / kWh`
+          : "电价未启用"
+      }`,
+    );
+  } catch (error) {
+    if (requestId !== state.monthlyCostRequest) return;
+    text(document.getElementById("monthly-cost-meta"), `每月费用不可用：${error.message}`);
+    renderMonthlyCostRows([]);
+  }
+}
+
 function hourlyBuckets(points) {
   const buckets = new Map();
   for (const point of points || []) {
@@ -331,7 +453,7 @@ async function refreshAll() {
   if (state.loading) return;
   state.loading = true;
   try {
-    await Promise.all([loadSummary(), loadDaily(), loadHourly()]);
+    await Promise.all([loadSummary(), loadDaily(), loadHourly(), loadMonthlyCost()]);
   } finally {
     state.loading = false;
   }
@@ -342,6 +464,16 @@ function handleSnapshot(snapshot) {
 }
 
 function init() {
+  const yearSelect = document.getElementById("monthly-cost-year");
+  if (yearSelect) {
+    yearSelect.addEventListener("change", (event) => {
+      const year = Number(event.target.value);
+      if (!Number.isInteger(year)) return;
+      state.monthlyCostYear = year;
+      loadMonthlyCost();
+    });
+  }
+
   const realtime = getRealtime();
   realtime.addEventListener("snapshot", (event) => handleSnapshot(event.detail));
   realtime.addEventListener("reconnected", () => {

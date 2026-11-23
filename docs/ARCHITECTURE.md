@@ -675,6 +675,7 @@ CREATE TABLE event_log (
 | GET | `/meter` | 外部电表状态、能力、最后读数、最后成功时间、失败计数 |
 | GET | `/power/history?window=5m&series=system,cpu,gpu_total,gpu:<uuid>` | 曲线数据，返回 `[[ts_ms, value], ...]` |
 | GET | `/energy/daily?days=7` | 每日 kWh（本地时区边界） |
+| GET | `/energy/yearly?year=2026` | 指定年份 12 个月的 kWh/费用；`year` 省略时取本地当前年份，返回 `years` 供年份选择 |
 | GET | `/energy/weekly` | 最近 7 天汇总 |
 | GET | `/energy/monthly` | 最近 30 天汇总 |
 | GET | `/energy/summary` | 今日/昨日/7d/30d + 电费 |

@@ -47,8 +47,8 @@ def test_pages_render_shared_shell(http: TestClient) -> None:
         assert "<title>" in body
         assert 'class="nav"' in body
         assert "Power Monitor" in body
-        assert f'src="{script}"' in body
-        assert 'src="/static/vendor/echarts.min.js"' in body
+        assert f'src="{script}?v=' in body
+        assert 'src="/static/vendor/echarts.min.js?v=' in body
 
 
 def test_pages_do_not_reference_cdn(http: TestClient) -> None:
@@ -71,8 +71,16 @@ def test_every_page_asset_resolves(http: TestClient) -> None:
             seen.add(asset)
             response = http.get(asset)
             assert response.status_code == 200, asset
-    assert "/static/assets/app.css" in seen
-    assert "/static/vendor/echarts.min.js" in seen
+    assert any(asset.startswith("/static/assets/app.css?v=") for asset in seen)
+    assert any(asset.startswith("/static/vendor/echarts.min.js?v=") for asset in seen)
+
+
+def test_static_asset_urls_are_versioned(http: TestClient) -> None:
+    for path in PAGES:
+        body = http.get(path).text
+        assets = [asset for asset in SCRIPT_SRC.findall(body) if asset.startswith("/static")]
+        assert assets, path
+        assert all("?v=" in asset for asset in assets), path
 
 
 @pytest.mark.parametrize("asset", STATIC_ASSETS)
@@ -80,6 +88,7 @@ def test_static_assets_are_served(http: TestClient, asset: str) -> None:
     response = http.get(asset)
     assert response.status_code == 200, asset
     assert response.content
+    assert response.headers.get("cache-control") == "no-cache"
 
 
 def test_echarts_is_vendored_with_license() -> None:

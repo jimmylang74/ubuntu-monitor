@@ -111,6 +111,7 @@ journalctl -u power-monitor -f
 | `GET /api/v1/meter` | 外部电表状态、能力、最后读数、最后成功时间与连续失败次数 |
 | `GET /api/v1/power/history?window=5m&series=system,cpu` | 历史曲线，服务端降采样 |
 | `GET /api/v1/energy/daily?days=7` | 按本地时区切分的每日能耗与费用 |
+| `GET /api/v1/energy/yearly?year=2026` | 指定年份 12 个月的能耗与费用，附可选年份列表；省略 `year` 时按本地时区取当前年份 |
 | `GET /api/v1/energy/weekly` / `monthly` / `summary` | 固定窗口与今日/昨日/7 天/30 天汇总 |
 | `GET /api/v1/config` | 当前生效配置（只读，不含敏感信息） |
 | `GET /api/v1/diagnostics` | RAPL 域/权限、NVML/AMD GPU 状态、采集器健康、表行数 |

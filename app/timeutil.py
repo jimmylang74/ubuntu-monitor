@@ -21,6 +21,15 @@ def local_day_bounds(day: date, tz: tzinfo) -> tuple[int, int]:
     return int(start.timestamp() * 1000), int(end.timestamp() * 1000)
 
 
+def local_month_bounds(year: int, month: int, tz: tzinfo) -> tuple[int, int]:
+    """Return [start, end) millisecond bounds for a local calendar month."""
+    first = date(year, month, 1)
+    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    start = datetime.combine(first, time.min, tzinfo=tz)
+    end = datetime.combine(next_month, time.min, tzinfo=tz)
+    return int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+
+
 def next_local_time(now: datetime, hour: int, minute: int, tz: tzinfo) -> datetime:
     local = now.astimezone(tz)
     candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)

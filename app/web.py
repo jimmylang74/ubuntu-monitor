@@ -6,6 +6,7 @@ under ``app/static/vendor`` so the dashboard also works on an isolated LAN.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
@@ -23,12 +24,35 @@ router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 
+class _NoCacheStaticFiles(StaticFiles):
+    """Always revalidate assets so a restart picks up changed JS/CSS."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+def _asset_version() -> str:
+    """Fingerprint static files so their URLs change whenever they are edited."""
+    digest = hashlib.sha256()
+    for path in sorted(STATIC_DIR.rglob("*")):
+        if not path.is_file():
+            continue
+        stat = path.stat()
+        digest.update(str(path.relative_to(STATIC_DIR)).encode())
+        digest.update(str(stat.st_mtime_ns).encode())
+        digest.update(str(stat.st_size).encode())
+    return digest.hexdigest()[:12]
+
+
 def _context(request: Request, page: str, title: str) -> dict[str, object]:
     return {
         "request": request,
         "page": page,
         "title": title,
         "version": __version__,
+        "asset_version": _asset_version(),
     }
 
 
@@ -60,4 +84,4 @@ def favicon() -> FileResponse:
 def mount_static(app: FastAPI) -> None:
     """Mount ``/static`` on the FastAPI application."""
 
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", _NoCacheStaticFiles(directory=STATIC_DIR), name="static")

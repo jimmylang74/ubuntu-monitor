@@ -72,6 +72,28 @@
     </article>
   </section>
 
+  <section class="card" aria-label="年度每月费用">
+    <div class="card__head">
+      <div><p class="eyebrow">Yearly</p><h2>每月能耗费用</h2></div>
+      <label class="select" for="monthly-cost-year">
+        <span>年份</span>
+        <select id="monthly-cost-year" aria-label="选择统计年份"></select>
+      </label>
+    </div>
+    <div id="monthly-cost-chart" class="chart chart--short" role="img" aria-label="所选年份每月费用柱状图"></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>月份</th><th>能耗 (kWh)</th><th>费用</th><th>数据</th></tr>
+        </thead>
+        <tbody id="monthly-cost-body">
+          <tr><td colspan="4">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="chart-meta muted small" id="monthly-cost-meta">加载中…</p>
+  </section>
+
   <section class="card">
     <div class="card__head">
       <div><p class="eyebrow">说明</p><h2>口径与费用</h2></div>
@@ -83,6 +105,8 @@
       <dd>按 <span id="timezone">—</span> 的本地日期切分“今日 / 昨日”。</dd>
       <dt>费用</dt>
       <dd>费用 = kWh × 电价；电价未启用时显示 “—”，不会用 0 代替。</dd>
+      <dt>年度每月费用</dt>
+      <dd>按本地时区的自然月边界汇总 12 个月；历史月份依赖 1 小时聚合保留期（默认 365 天），超出保留期的月份显示 “无数据”。</dd>
       <dt>缺失数据</dt>
       <dd>缺测样本不会插值；质量徽标会标记 Estimated / Unavailable。</dd>
     </dl>
@@ -90,5 +114,5 @@
 {% endblock %}
 
 {% block scripts %}
-  <script type="module" src="/static/assets/pages/energy.js"></script>
+  <script type="module" src="/static/assets/pages/energy.js?v={{ asset_version }}"></script>
 {% endblock %}

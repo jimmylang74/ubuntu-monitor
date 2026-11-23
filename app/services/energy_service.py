@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from app.config import AppConfig
 from app.database.database import AppDatabase
-from app.timeutil import local_day_bounds, resolve_timezone
+from app.timeutil import local_day_bounds, local_month_bounds, resolve_timezone
 
 
 class EnergyService:
@@ -42,6 +42,24 @@ class EnergyService:
             "cost": cost,
         }
 
+    @staticmethod
+    def _empty_totals() -> dict[str, Any]:
+        return {
+            "energy_wh": None,
+            "energy_kwh": None,
+            "quality": "unavailable",
+            "samples": 0,
+            "missing_samples": 0,
+            "cost": None,
+        }
+
+    def _available_years(self, now_local: datetime, selected_year: int) -> list[int]:
+        """Years that may still have hourly energy rows under the retention policy."""
+        earliest = now_local - timedelta(days=self.cfg.history.hourly_retention_days)
+        years = set(range(earliest.year, now_local.year + 1))
+        years.add(selected_year)
+        return sorted(years)
+
     def daily(self, days: int = 7) -> dict[str, Any]:
         if days < 1 or days > 366:
             raise ValueError("days must be between 1 and 366")
@@ -58,6 +76,7 @@ class EnergyService:
             "days": entries,
             "currency": self.cfg.electricity.currency,
             "price_per_kwh": self.cfg.electricity.price_per_kwh,
+            "electricity_enabled": self.cfg.electricity.enabled,
             "timezone": str(tz),
         }
 
@@ -79,5 +98,34 @@ class EnergyService:
             "last_30_days": period(29, 0),
             "currency": self.cfg.electricity.currency,
             "price_per_kwh": self.cfg.electricity.price_per_kwh,
+            "electricity_enabled": self.cfg.electricity.enabled,
+            "timezone": str(tz),
+        }
+
+    def yearly(self, year: int | None = None) -> dict[str, Any]:
+        """Return one entry per calendar month with energy and cost totals."""
+        tz = resolve_timezone(self.cfg.server.timezone)
+        now_local = self._now().astimezone(tz)
+        selected_year = now_local.year if year is None else year
+        if not 1970 <= selected_year <= 2100:
+            raise ValueError("year must be between 1970 and 2100")
+
+        now_ms = int(self._now().timestamp() * 1000)
+        months: list[dict[str, Any]] = []
+        for month in range(1, 13):
+            start_ms, end_ms = local_month_bounds(selected_year, month, tz)
+            if start_ms >= now_ms:
+                totals = self._empty_totals()
+            else:
+                totals = self._totals(start_ms, min(end_ms, now_ms))
+            months.append({"month": month, "label": f"{selected_year}-{month:02d}", **totals})
+
+        return {
+            "year": selected_year,
+            "months": months,
+            "years": self._available_years(now_local, selected_year),
+            "currency": self.cfg.electricity.currency,
+            "price_per_kwh": self.cfg.electricity.price_per_kwh,
+            "electricity_enabled": self.cfg.electricity.enabled,
             "timezone": str(tz),
         }

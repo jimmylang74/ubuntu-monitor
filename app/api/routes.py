@@ -193,6 +193,16 @@ def energy_monthly(request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/energy/yearly")
+def energy_yearly(request: Request, year: int | None = Query(None, ge=1970, le=2100)) -> dict[str, Any]:
+    try:
+        return _runtime(request).energy.yearly(year)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DatabaseUnavailable as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/energy/summary")
 def energy_summary(request: Request) -> dict[str, Any]:
     try:

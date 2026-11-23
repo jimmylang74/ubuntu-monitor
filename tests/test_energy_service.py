@@ -127,6 +127,68 @@ def test_cost_is_null_when_electricity_pricing_is_disabled(
     assert day["cost"] is None
 
 
+def test_yearly_cost_returns_twelve_months(database: AppDatabase, cfg: AppConfig) -> None:
+    repository = database.ensure_open()
+    now = datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC)
+
+    def hour_row(bucket_ms: int, energy_wh: float) -> dict:
+        return {
+            "bucket_ms": bucket_ms,
+            "system_w_avg": 180.0,
+            "system_w_max": 190.0,
+            "cpu_w_avg": 80.0,
+            "gpu_w_avg": 40.0,
+            "energy_wh": energy_wh,
+            "energy_quality": "measured",
+            "sample_count": 3600,
+            "expected_count": 3600,
+        }
+
+    repository.upsert_hour_rows(
+        [
+            hour_row(utc_ms(datetime(2026, 1, 2, tzinfo=UTC)), 1500.0),
+            hour_row(utc_ms(datetime(2026, 3, 2, tzinfo=UTC)), 2500.0),
+        ]
+    )
+    repository.upsert_sample(sample(utc_ms(datetime(2026, 6, 14, 12, tzinfo=UTC)), 3000.0), [])
+
+    result = EnergyService(cfg, database, now=lambda: now).yearly(2026)
+
+    assert result["year"] == 2026
+    assert 2026 in result["years"]
+    assert [entry["month"] for entry in result["months"]] == list(range(1, 13))
+    january, march, june, december = (
+        result["months"][0],
+        result["months"][2],
+        result["months"][5],
+        result["months"][11],
+    )
+    assert january["label"] == "2026-01"
+    assert january["energy_kwh"] == pytest.approx(1.5)
+    assert january["cost"] == pytest.approx(0.75)
+    assert march["cost"] == pytest.approx(1.25)
+    assert june["cost"] == pytest.approx(1.5)
+    assert december["quality"] == "unavailable"
+    assert december["cost"] is None
+
+
+def test_yearly_defaults_to_current_year_and_keeps_cost_null_when_disabled(
+    database: AppDatabase,
+) -> None:
+    disabled_cfg = AppConfig(
+        server=ServerConfig(timezone="UTC"),
+        electricity=ElectricityConfig(enabled=False),
+    )
+
+    result = EnergyService(disabled_cfg, database, now=lambda: NOW).yearly()
+
+    assert result["year"] == 2026
+    assert result["electricity_enabled"] is False
+    assert all(entry["cost"] is None for entry in result["months"])
+    with pytest.raises(ValueError):
+        EnergyService(disabled_cfg, database, now=lambda: NOW).yearly(1960)
+
+
 def test_energy_uses_hourly_aggregates_before_raw_cutoff(
     database: AppDatabase,
 ) -> None:

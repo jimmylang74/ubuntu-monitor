@@ -114,7 +114,7 @@ network:
   include_interfaces: []
 
 electricity:
-  enabled: false
+  enabled: true
   price_per_kwh: 0.8
   currency: CNY
 

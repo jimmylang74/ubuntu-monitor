@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>{{ title }} · Power Monitor</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/assets/app.css">
+  <link rel="icon" href="/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/assets/app.css?v={{ asset_version }}">
 </head>
 <body>
   <a class="skip-link" href="#main">跳到主要内容</a>
@@ -49,7 +49,7 @@
     <div class="noscript">本页面需要启用 JavaScript 才能显示实时数据。</div>
   </noscript>
 
-  <script src="/static/vendor/echarts.min.js"></script>
+  <script src="/static/vendor/echarts.min.js?v={{ asset_version }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
