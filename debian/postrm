@@ -1,0 +1,41 @@
+#!/bin/sh
+# Remove generated state only on purge; dpkg handles shipped package files and
+# conffiles itself.
+set -e
+
+SERVICE_USER=power-monitor
+
+case "$1" in
+remove)
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    ;;
+
+purge)
+    if [ -d /run/systemd/system ]; then
+        systemctl disable power-monitor.service >/dev/null 2>&1 || true
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    rm -f /usr/local/lib/power-monitor/rapl-read
+    rmdir /usr/local/lib/power-monitor 2>/dev/null || true
+    rm -rf /usr/lib/power-monitor/venv
+    rm -rf /var/lib/power-monitor
+    if getent passwd "$SERVICE_USER" >/dev/null 2>&1; then
+        deluser --system "$SERVICE_USER" >/dev/null 2>&1 || true
+    fi
+    if getent group "$SERVICE_USER" >/dev/null 2>&1; then
+        delgroup --system "$SERVICE_USER" >/dev/null 2>&1 || true
+    fi
+    ;;
+
+upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+    ;;
+
+*)
+    echo "postrm called with unknown argument '$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

@@ -1,0 +1,85 @@
+# Ubuntu Power Monitor — packaged configuration (dpkg conffile).
+# Local edits are preserved on package upgrades.
+# Environment overrides: PM_CONFIG (this file), PM_DATA_DIR (state directory).
+
+server:
+  host: 0.0.0.0
+  port: 8010
+  log_level: info
+  # Empty means stderr; systemd sends it to journald, which handles rotation.
+  log_file: ""
+  log_max_bytes: 10485760
+  log_backup_count: 5
+  timezone: local
+
+collector:
+  cpu_interval: 1
+  gpu_interval: 1
+  memory_interval: 2
+  disk_interval: 5
+  network_interval: 1
+  system_interval: 1
+  timeout: 2.0
+
+gpu:
+  fallback_nvidia_smi: true
+  reinit_interval: 10
+  expose_fan: true
+  backends: [nvidia, amdgpu]
+  require_all_backends: false
+  amdgpu:
+    apu_policy: auto
+    apu_vram_limit_gb: 2.0
+
+rapl:
+  # Package-owned helper. Must match /etc/sudoers.d/power-monitor-rapl.
+  helper: /usr/lib/power-monitor/rapl-read
+  control_types: [intel-rapl]
+  max_plausible_w: 1500
+  min_interval_s: 0.2
+
+database:
+  type: sqlite
+  # Relative to PM_DATA_DIR, which the service sets to /var/lib/power-monitor.
+  path: data/power_monitor.db
+  write_interval: 1
+  busy_timeout_ms: 5000
+  wal: true
+
+power:
+  mode: auto
+  # estimated_other_power_w: 150
+  strict_estimate: true
+
+  external_meter:
+    enabled: false
+    type: shelly
+    timeout: 2.0
+    interval: 1.0
+    failover_after: 3
+    shelly:
+      url: ""
+      generation: auto
+
+network:
+  exclude_interfaces:
+    - "lo"
+    - "docker*"
+    - "br-*"
+    - "veth*"
+    - "virbr*"
+    - "tun*"
+    - "tap*"
+  include_interfaces: []
+
+electricity:
+  enabled: false
+  price_per_kwh: 0.8
+  currency: CNY
+
+history:
+  raw_retention_days: 7
+  minute_retention_days: 90
+  hourly_retention_days: 365
+  cleanup_hour: 3
+  max_points: 2000

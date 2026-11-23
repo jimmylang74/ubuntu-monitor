@@ -1,0 +1,133 @@
+#!/bin/sh
+# Maintainer script executed by dpkg (and therefore by apt) after unpacking.
+# Critical failures abort the installation; diagnostics are best-effort.
+set -e
+
+PACKAGE=power-monitor
+LIBDIR=/usr/lib/power-monitor
+DATADIR=/var/lib/power-monitor
+SERVICE_USER=power-monitor
+SERVICE=power-monitor.service
+CONFIG=/etc/power-monitor/config.yaml
+SUDOERS=/etc/sudoers.d/power-monitor-rapl
+
+case "$1" in
+configure)
+    export PM_CONFIG="$CONFIG"
+    export PM_DATA_DIR="$DATADIR"
+
+    # 1. Dedicated unprivileged service account (works for apt/GUI installs too,
+    #    where SUDO_USER is often unset).
+    if ! getent passwd "$SERVICE_USER" >/dev/null 2>&1; then
+        adduser --system --group --no-create-home --home /nonexistent \
+            --shell /usr/sbin/nologin --gecos "Power Monitor" "$SERVICE_USER" >/dev/null
+    fi
+    SERVICE_GROUP=$(id -gn "$SERVICE_USER")
+    install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 \
+        "$DATADIR" "$DATADIR/data" "$DATADIR/logs"
+
+    # 2. Offline virtualenv from the wheelhouse shipped inside the package.
+    VENV="$LIBDIR/venv"
+    if [ ! -x "$VENV/bin/python" ]; then
+        rm -rf "$VENV"
+        python3 -m venv "$VENV"
+    fi
+    PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1 \
+        "$VENV/bin/pip" install --no-index --no-deps \
+        --find-links="$LIBDIR/wheels" -r "$LIBDIR/requirements.lock.txt" >/dev/null
+    (cd "$LIBDIR" && "$VENV/bin/python" -c \
+        'import app, fastapi, uvicorn, yaml, pydantic, sqlalchemy, psutil') || {
+            echo "power-monitor: bundled Python environment failed verification" >&2
+            exit 1
+        }
+    if ! /usr/bin/power-monitor check >/dev/null 2>&1; then
+        echo "power-monitor: /usr/bin/power-monitor wrapper failed verification" >&2
+        exit 1
+    fi
+
+    # 3. Read-only RAPL helper. The sudoers file itself is a dpkg conffile.
+    chown root:root "$LIBDIR/rapl-read"
+    chmod 0755 "$LIBDIR/rapl-read"
+    install -d -o root -g root -m 0755 /usr/local/lib/power-monitor
+    ln -sfn "$LIBDIR/rapl-read" /usr/local/lib/power-monitor/rapl-read
+    if ! visudo -cf "$SUDOERS" >/dev/null 2>&1; then
+        echo "power-monitor: invalid sudoers rule at $SUDOERS" >&2
+        exit 1
+    fi
+
+    VERSION=$(cat "$LIBDIR/version" 2>/dev/null || echo unknown)
+
+    # 4. Hardware detection. Never fail the installation because a host lacks
+    #    RAPL, an NVIDIA driver, or any other optional hardware.
+    REPORT="$DATADIR/hardware-report.txt"
+    TMP_REPORT=$(mktemp)
+    {
+        echo "Ubuntu Power Monitor hardware report"
+        echo "generated: $(date -Is)"
+        echo "version: $VERSION"
+        echo "config: $CONFIG"
+        echo
+        (cd "$LIBDIR" && exec "$VENV/bin/python" -m app.cli doctor)
+    } > "$TMP_REPORT" 2>&1 || true
+    install -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0640 "$TMP_REPORT" "$REPORT"
+    rm -f "$TMP_REPORT"
+
+    nvidia_present=0
+    for vendor in /sys/bus/pci/devices/*/vendor; do
+        [ -r "$vendor" ] || continue
+        if grep -qi '0x10de' "$vendor"; then
+            nvidia_present=1
+            break
+        fi
+    done
+    if [ "$nvidia_present" -eq 1 ] && \
+       grep -qE 'NVML unavailable|nvidia-smi: not found' "$REPORT"; then
+        echo "NOTE: an NVIDIA GPU was detected but its driver is not usable."
+        echo "      Install a matching driver, e.g. sudo apt install nvidia-driver-XXX && sudo reboot"
+        echo "      Other sensors still work; GPU metrics remain unavailable until then."
+    fi
+
+    # 5. Enable and start the service when systemd is actually running.
+    PORT=$("$VENV/bin/python" -c \
+        'import os, yaml; c = yaml.safe_load(open(os.environ["PM_CONFIG"])) or {}; print(c.get("server", {}).get("port", 8010))' \
+        2>/dev/null || echo 8010)
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+        if ! systemctl restart "$SERVICE"; then
+            echo "warning: could not start $SERVICE; inspect: journalctl -u $SERVICE" >&2
+        else
+            healthy=0
+            attempt=0
+            while [ "$attempt" -lt 10 ]; do
+                if "$VENV/bin/python" -c \
+                    'import sys, urllib.request; urllib.request.urlopen("http://127.0.0.1:" + sys.argv[1] + "/health", timeout=2).read()' \
+                    "$PORT" >/dev/null 2>&1; then
+                    healthy=1
+                    break
+                fi
+                attempt=$((attempt + 1))
+                sleep 1
+            done
+            if [ "$healthy" -eq 0 ]; then
+                echo "warning: /health did not respond yet; inspect: journalctl -u $SERVICE" >&2
+            fi
+        fi
+    else
+        echo "systemd is not running in this environment; start later with: sudo systemctl start $SERVICE"
+    fi
+
+    echo "power-monitor $VERSION installed."
+    echo "dashboard: http://localhost:$PORT/"
+    echo "hardware report: $REPORT"
+    ;;
+
+abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+*)
+    echo "postinst called with unknown argument '$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

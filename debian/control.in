@@ -1,0 +1,16 @@
+Package: power-monitor
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Power Monitor Maintainers <power-monitor@localhost>
+Depends: python3 (>= 3.12), python3-venv, python3-pip, adduser, sudo, systemd
+Recommends: curl
+Suggests: ubuntu-drivers-common, nvidia-driver-550
+Description: Real-time CPU/GPU/system power monitoring for Ubuntu
+ Installs an isolated Python environment from a bundled offline wheelhouse,
+ a read-only RAPL helper with a scoped sudoers rule, a systemd service and a
+ hardware detection report. The web dashboard is enabled automatically.
+ .
+ Default dashboard: http://localhost:8010/
+ Runtime state: /var/lib/power-monitor

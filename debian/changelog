@@ -1,0 +1,9 @@
+power-monitor (0.1.0) noble; urgency=medium
+
+  * Initial Ubuntu 24.04 amd64 package.
+  * Offline venv creation from a bundled wheelhouse.
+  * Dedicated system user, read-only RAPL helper and scoped sudoers rule.
+  * systemd service enabled on installation.
+  * Hardware diagnostics written to /var/lib/power-monitor/hardware-report.txt.
+
+ -- Power Monitor Maintainers <power-monitor@localhost>  Mon, 23 Nov 2026 00:00:00 +0000

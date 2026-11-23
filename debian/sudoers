@@ -1,0 +1,3 @@
+# Managed by the power-monitor .deb package. Do not edit by hand.
+# The helper only prints RAPL energy counters; it never writes to sysfs.
+power-monitor ALL=(root) NOPASSWD: /usr/lib/power-monitor/rapl-read

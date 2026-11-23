@@ -1,0 +1,2 @@
+/etc/power-monitor/config.yaml
+/etc/sudoers.d/power-monitor-rapl

@@ -6,7 +6,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
@@ -14,7 +13,7 @@ from fastapi import FastAPI
 from app import __version__
 from app.api.routes import root_router, router
 from app.api.websocket import router as websocket_router
-from app.config import PROJECT_ROOT, AppConfig, ServerConfig, load_config
+from app.config import AppConfig, ServerConfig, load_config, resolve_data_path
 from app.database.database import DatabaseUnavailable
 from app.runtime import build_runtime
 from app.web import mount_static, router as web_router
@@ -91,9 +90,7 @@ def configure_logging(server: ServerConfig) -> None:
     fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
     handlers: list[logging.Handler]
     if server.log_file:
-        path = Path(server.log_file)
-        if not path.is_absolute():
-            path = PROJECT_ROOT / path
+        path = resolve_data_path(server.log_file)
         path.parent.mkdir(parents=True, exist_ok=True)
         handler = RotatingFileHandler(
             path,

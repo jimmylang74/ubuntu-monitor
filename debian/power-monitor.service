@@ -1,0 +1,36 @@
+[Unit]
+Description=Ubuntu Power Monitor
+Documentation=file:/usr/share/doc/power-monitor/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=power-monitor
+Group=power-monitor
+WorkingDirectory=/usr/lib/power-monitor
+Environment=PM_CONFIG=/etc/power-monitor/config.yaml
+Environment=PM_DATA_DIR=/var/lib/power-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/lib/power-monitor/venv/bin/python -m app.main
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGINT
+SyslogIdentifier=power-monitor
+StandardOutput=journal
+StandardError=journal
+
+# State owned by the dedicated service user.
+StateDirectory=power-monitor
+ReadWritePaths=/var/lib/power-monitor
+
+# Hardening. Do NOT enable NoNewPrivileges: the collector calls the read-only
+# RAPL helper through a scoped NOPASSWD sudoers rule.
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

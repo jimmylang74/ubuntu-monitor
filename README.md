@@ -97,6 +97,21 @@ journalctl -u power-monitor -f
 - 默认只允许写仓库下的 `data/` 与 `logs/`；若把 `database.path` 或 `server.log_file`
   指向其他目录，需要把该目录加入 unit 的 `ReadWritePaths`。
 
+### Ubuntu 安装包（.deb）
+
+面向 Ubuntu 24.04 amd64 可以构建自包含安装包，安装时自动完成 venv、RAPL helper、
+systemd 服务和硬件检测报告。根目录的 `build-deb.sh` 是 `scripts/package/build-deb.sh` 的链接：
+
+```bash
+./build-deb.sh                          # 产物在 dist/
+sudo apt install ./dist/power-monitor_0.1.0_amd64.deb
+```
+
+只更新代码后重启现有服务不受影响（`sudo systemctl restart power-monitor`）。
+但如果安装 `.deb`，服务会改用 `power-monitor` 系统用户和新数据库路径
+`/var/lib/power-monitor/data/power_monitor.db`，旧历史数据需手动迁移。
+详见 [打包与安装说明](docs/PACKAGING.md)。
+
 ## REST 与 WebSocket
 
 | 端点 | 说明 |

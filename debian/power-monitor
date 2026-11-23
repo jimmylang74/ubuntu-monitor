@@ -1,0 +1,10 @@
+#!/bin/sh
+# CLI wrapper installed as /usr/bin/power-monitor.
+set -e
+
+export PM_CONFIG="${PM_CONFIG:-/etc/power-monitor/config.yaml}"
+export PM_DATA_DIR="${PM_DATA_DIR:-/var/lib/power-monitor}"
+export PYTHONDONTWRITEBYTECODE=1
+
+cd /usr/lib/power-monitor
+exec /usr/lib/power-monitor/venv/bin/python -m app.cli "$@"

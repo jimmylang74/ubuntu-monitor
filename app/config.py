@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -10,6 +11,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
+# In a checkout this is unset (paths stay relative to PROJECT_ROOT).  The .deb
+# service sets it to /var/lib/power-monitor so /usr/lib stays read-only.
+DATA_DIR_ENV = "PM_DATA_DIR"
+
+
+def data_root() -> Path:
+    """Return the root for relative runtime paths (database, logs)."""
+    override = os.environ.get(DATA_DIR_ENV)
+    return Path(override) if override else PROJECT_ROOT
+
+
+def resolve_data_path(path: str | Path) -> Path:
+    """Resolve an absolute path as-is, otherwise relative to ``data_root``."""
+    candidate = Path(path)
+    return candidate if candidate.is_absolute() else data_root() / candidate
 
 
 class _Base(BaseModel):
@@ -165,8 +181,7 @@ class AppConfig(_Base):
 
     @property
     def database_path(self) -> Path:
-        path = Path(self.database.path)
-        return path if path.is_absolute() else PROJECT_ROOT / path
+        return resolve_data_path(self.database.path)
 
 
 def load_config(path: Path | str | None = None) -> AppConfig:

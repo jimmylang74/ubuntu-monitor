@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.metadata
+import os
 import shutil
 import sys
 import time
@@ -411,7 +412,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--interval must be > 0")
 
     try:
-        cfg = load_config(args.config)
+        # --config wins; otherwise honour PM_CONFIG like the web service does.
+        cfg = load_config(args.config or os.environ.get("PM_CONFIG"))
     except ValueError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
