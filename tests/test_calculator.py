@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -12,7 +13,7 @@ from app.domain import (
     measured,
     unavailable,
 )
-from app.power.calculator import MeterState, compute_system_power
+from app.power.calculator import MeterState, compute_system_power, suggest_other_power_w
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -136,7 +137,7 @@ def test_non_strict_estimate_sums_available_components() -> None:
 
 
 def test_estimated_mode_ignores_meter() -> None:
-    cfg = PowerConfig(mode="estimated")
+    cfg = PowerConfig(mode="estimated", estimated_other_power_w=150.0)
     result = compute_system_power(
         cpu(100.0),
         (),
@@ -152,3 +153,47 @@ def test_estimated_mode_ignores_meter() -> None:
 def test_estimate_is_never_marked_measured() -> None:
     result = compute_system_power(cpu(100.0), (), None, MeterState(), PowerConfig(), NOW)
     assert result.power.quality is Quality.ESTIMATED
+
+
+def test_suggest_other_power_uses_detected_hardware() -> None:
+    suggestion = suggest_other_power_w(
+        sockets=2,
+        memory_bytes=32 * 1024**3,
+        disk_devices=("nvme0n1", "sda"),
+    )
+    assert suggestion.breakdown == {
+        "board_and_fans": 120.0,
+        "memory": pytest.approx(3.8, abs=0.1),
+        "disks": 10.0,
+    }
+    assert suggestion.watts == pytest.approx(133.8, abs=0.1)
+    assert "2 socket(s)" in suggestion.basis
+
+
+def test_suggest_other_power_deduplicates_disk_partitions() -> None:
+    suggestion = suggest_other_power_w(
+        disk_devices=("nvme0n1p1", "nvme0n1p2", "sda1", "/dev/sdb1")
+    )
+    assert suggestion.breakdown["disks"] == 16.0
+    assert "3 detected device(s)" in suggestion.basis
+
+
+def test_suggest_other_power_has_conservative_fallback() -> None:
+    suggestion = suggest_other_power_w(memory_bytes=None, disk_devices=())
+    assert suggestion.breakdown["memory"] == 0.0
+    assert suggestion.breakdown["disks"] == 8.0
+    assert suggestion.watts == 68.0
+
+
+def test_apu_gpu_power_is_not_added_to_component_sum() -> None:
+    apu_gpu = replace(gpu("GPU-APU", 35.0), include_in_system_total=False)
+    result = compute_system_power(
+        cpu(100.0),
+        (apu_gpu,),
+        None,
+        MeterState(),
+        PowerConfig(estimated_other_power_w=150.0),
+        NOW,
+    )
+    assert result.power.value == pytest.approx(250.0)
+    assert "gpu:GPU-APU" not in result.missing_components

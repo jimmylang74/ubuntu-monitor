@@ -272,7 +272,7 @@ class Snapshot:
 | quality | 含义 | 允许的来源 |
 |---|---|---|
 | `measured` | 直接读取硬件计数器/温度/电表 | RAPL、NVML、psutil、PowerMeter |
-| `estimated` | 实测组件求和 + 配置常量 | `calculator` |
+| `estimated` | 实测组件求和 + 自动建议值或配置常量 | `calculator:components` |
 | `unavailable` | 无法得出，`value=None` | 任何失败路径 |
 
 聚合规则：
@@ -280,8 +280,9 @@ class Snapshot:
 - CPU 总功耗 = 所有 package 功耗之和；**只有全部 package 都是 `measured` 才允许输出 `measured`**，
   否则输出 `unavailable`，并在 `missing` 中列出缺失的 package。
 - GPU 总功耗同理；单张 GPU 失败不影响其他 GPU 的独立卡片，但 GPU 总和与整机估算变为不可用。
-- 未检测到 NVIDIA GPU 时，GPU 总功耗 = `0 W measured`，`source="nvml:none"`（这是“确实没有”，不是缺失）。
-- 估算整机功耗 = CPU 总和 + GPU 总和 + `estimated_other_power_w`；`quality=estimated`、`scope=dc_components`。
+- 未检测到任何 GPU 时，GPU 总功耗 = `0 W measured`，`source="gpu:none-in-total"`（这是“确实没有”，不是缺失）。
+- 估算整机功耗 = CPU 总和 + 计入求和的 GPU 总和 + `other_components_w`；`quality=estimated`、`scope=dc_components`，
+  `other_power_source` 指明该值是自动建议还是配置常量。
 - 外部电表 = `quality=measured`、`scope=wall`。
 - **估算值永远不能标记为 `measured`，也不能与电表值混用。**
 
@@ -345,7 +346,8 @@ class PeriodicTask:
 
 ```python
 def discover() -> list[RaplDomain]:
-    # glob /sys/class/powercap/intel-rapl:*  （仅顶层，不含 ":" 子域）
+    # glob /sys/class/powercap/{control_type}:*  （默认 control_type=intel-rapl）
+    # Linux 主线把 AMD Zen RAPL 也注册为 intel-rapl:*，因此无需按厂商分支
     # 读取 name -> "package-0" / "package-1"
     # 读取 max_energy_range_uj
     # 只把 name.startswith("package-") 的域计入 CPU 功耗
@@ -378,8 +380,9 @@ def discover() -> list[RaplDomain]:
 
 温度与拓扑：
 
-- 温度：扫描 `/sys/class/hwmon/*/name == "coretemp"`，解析 `temp*_label == "Package id N"`，
-  映射到 package N。读不到就 `unavailable`，不要用其他传感器的值顶替。
+- 温度：扫描 `/sys/class/hwmon/*/name == "coretemp"`，解析 `temp*_label == "Package id N"`；
+  AMD 则读取 `k10temp` 的 `Tctl`/`Tdie`/`TccdN`，多个 hwmon 设备按拓扑中的 package id 顺序映射。
+  读不到就 `unavailable`，不要用其他传感器的值顶替。
 - 核心/线程数：遍历 `/sys/devices/system/cpu/cpu[0-9]+/topology/{physical_package_id,core_id}`，
   按 package 去重 `core_id`。
 - 使用率：`psutil.cpu_percent(percpu=True)`（初始化时先调用一次丢弃首帧），
@@ -387,7 +390,7 @@ def discover() -> list[RaplDomain]:
 - 频率：对 package 内逻辑 CPU 的 `scaling_cur_freq` 取平均（kHz → MHz）；
   sysfs 不可用时退回 `psutil.cpu_freq()` 并标注 source。
 
-### 5.3 GPU（`power/adapters/nvidia.py`）
+### 5.3 GPU（`power/adapters/nvidia.py`、`power/adapters/amdgpu.py`）
 
 - 首选 `pynvml`（PyPI 包名 `nvidia-ml-py`）。
 - 初始化：`nvmlInit()` → `nvmlDeviceGetCount()` → 逐卡取 `uuid`、`name`、PCI bus id。
@@ -411,6 +414,19 @@ def discover() -> list[RaplDomain]:
 - 备用采集：`nvidia-smi --query-gpu=... --format=csv,noheader,nounits`，使用
   `asyncio.create_subprocess_exec`（绝不经 shell），按 UUID 解析；`[N/A]`、`[Not Supported]` → `None`。
   仅在 `gpu.fallback_nvidia_smi: true` 且 pynvml 初始化失败时启用。
+
+AMD GPU（amdgpu hwmon）：
+
+- 扫描 `/sys/class/drm/card[0-9]*/device/hwmon/hwmon*/`，通过 `vendor == 0x1002`、
+  `driver`/`uevent` 或 hwmon `name` 确认 AMD 设备；不依赖 pynvml 或 `nvidia-smi`。
+- 指标映射：`power1_average`（优先）或 `power1_input`（µW → W）、`power1_cap`、`temp1_input`
+  （m°C → °C）、`fan1_input`（rpm，结合 `fan1_max` 换算百分比）、`gpu_busy_percent`、
+  `mem_info_vram_used/total`、`pp_dpm_sclk/mclk` 当前频率。
+- ID 用 PCI BDF 生成 `amdgpu:0000:03:00.0`，历史曲线 `series=gpu:<uuid>` 可继续使用。
+- APU 的 hwmon 功率通常包含 CPU package，默认 `include_in_system_total=false`，只展示不参与
+  整机分项求和；`gpu.amdgpu.apu_policy` 可强制 `include`/`exclude`。
+- NVIDIA 与 AMD 后端独立采样；`gpu.backends` 控制启用项，`gpu.require_all_backends=false`
+  时任一后端可用即视为枚举成功。最终 index 统一重排，保证 UI/数据库唯一。
 
 ### 5.4 内存 / 磁盘 / 网络
 
@@ -452,15 +468,19 @@ def decide(
 Estimated System Power (DC components)
   = Σ CPU package power
   + Σ GPU power
-  + estimated_other_power_w
+  + other_components_w
 ```
 
-`estimated_other_power_w` 覆盖主板、内存、风扇、磁盘、网卡等未直接测量的部件，
-默认 150 W（本机双路 + 双 V100 的合理起点，可按实测校准）。它**不包含 PSU 转换损耗**，
+`other_components_w` 覆盖主板、内存、风扇、磁盘、网卡等未直接测量的部件。默认不写死数值：
+`power.estimated_other_power_w` 留空时，`suggest_other_power_w()` 按检测到的 socket 数、内存容量、
+磁盘设备给出建议（60 W/socket + 0.12 W/GiB 内存 + 4 W/NVMe 或 6 W/其他磁盘，分区按父设备去重，封顶 400 W），
+并在 `SystemPower.other_power_source` 与 `/api/v1/config` 的 `power.last_suggestion` 中公开明细。
+用户在配置里写入固定值后，该值优先，`other_power_source="config"`。它**不包含 PSU 转换损耗**，
 因此 `estimated(scope=dc_components)` 与电表 `measured(scope=wall)` 不应被要求数值相等；
 UI 必须展示 scope 提示，避免误读。
 
-`estimated_other_power_w` 为配置值，不是测量值；UI 的 tooltip 需说明这一点。
+自动建议值与固定配置值都不是测量值；UI 的 tooltip 需说明来源。APU 的 GPU hwmon 功率
+已包含 CPU package，默认不计入 GPU 总和，避免重复计算。
 
 ## 7. 外部电表适配器（Phase 4，`power/adapters/`）
 
@@ -672,7 +692,7 @@ Web UI 位于根路径 `/`、`/cpu`、`/gpu`、`/energy`；服务元数据位于
   "value": 512.4,
   "unit": "W",
   "quality": "estimated",
-  "source": "calculator:rapl+nvml",
+  "source": "calculator:components",
   "timestamp": "2026-11-15T16:00:00+08:00",
   "scope": "dc_components",
   "missing": []
@@ -709,12 +729,13 @@ Web UI 位于根路径 `/`、`/cpu`、`/gpu`、`/energy`；服务元数据位于
   "type": "snapshot",
   "timestamp": "2026-11-15T16:00:00+08:00",
   "system": {
-    "power": {"value": 520.5, "unit": "W", "quality": "estimated", "source": "calculator", "scope": "dc_components", "timestamp": "..."},
-    "other_components_w": 150
+    "power": {"value": 520.5, "unit": "W", "quality": "estimated", "source": "calculator:components", "scope": "dc_components", "timestamp": "..."},
+    "other_components_w": 120.4,
+    "other_power_source": "auto:1 socket(s), 31.4 GiB RAM, 1 detected device(s), 1 GPU(s) measured separately"
   },
   "cpu": {"total_power": {"value": 185.2, "unit": "W", "quality": "measured", "source": "rapl:package-*", "timestamp": "..."}, "usage_percent": 35.5, "packages": []},
   "gpu": [
-    {"uuid": "GPU-xxxx", "name": "Tesla V100", "power": {"value": 120.5, "unit": "W", "quality": "measured", "source": "nvml:GPU-xxxx", "timestamp": "..."}, "temperature": 55, "utilization": 65}
+    {"uuid": "GPU-xxxx", "name": "Tesla V100", "include_in_system_total": true, "power": {"value": 120.5, "unit": "W", "quality": "measured", "source": "nvml:GPU-xxxx", "timestamp": "..."}, "temperature": 55, "utilization": 65}
   ],
   "health": {"gpu": {"state": "ok"}}
 }
@@ -755,6 +776,10 @@ Web UI 位于根路径 `/`、`/cpu`、`/gpu`、`/energy`；服务元数据位于
 
 - `server.port` 默认 `8010`（按本机决定）。
 - `power.strict_estimate`：缺失组件时是否仍给估算值，默认 `true` 表示**不给**。
+- `power.estimated_other_power_w`：留空（默认）时自动建议，写入数值则固定；来源见 `other_power_source`。
+- `gpu.backends`：默认 `["nvidia", "amdgpu"]`；`gpu.require_all_backends=false` 时任一后端健康即可。
+- `gpu.amdgpu.apu_policy` / `apu_vram_limit_gb`：APU 去重策略。
+- `rapl.control_types`：默认 `["intel-rapl"]`，AMD Zen RAPL 也在此控制类型下。
 - `rapl.max_plausible_w`：RAPL 重置检测阈值。
 - `rapl.helper` / `rapl.use_sudo`：只读 RAPL helper（auto/always/never），不保存密码。
 - `network.exclude_interfaces` / `include_interfaces`。
@@ -774,9 +799,11 @@ Web UI 位于根路径 `/`、`/cpu`、`/gpu`、`/energy`；服务元数据位于
 |---|---|
 | 无 RAPL | CPU 功耗 `unavailable`，服务正常；CLI/诊断给出原因 |
 | `energy_uj` 权限不足 | 自动切换到只读 helper；仍失败则 `unavailable`，错误信息给出安装指引 |
-| 无 NVIDIA GPU | GPU 列表为空，GPU 总功耗 0 W `measured` |
-| NVML 初始化失败 | 所有 GPU `unavailable`，退避重试，服务不崩 |
-| 单张 GPU 读取失败 | 该卡 `unavailable`，其他卡正常；GPU 总和不可用 |
+| 无 GPU 后端检测到设备 | GPU 列表为空，GPU 总功耗 0 W `measured` |
+| NVML 初始化失败 | NVIDIA 后端不可用并退避重试；若 AMD 后端正常，整机估算不受影响 |
+| 无 AMD hwmon 节点 | AMD 后端视为“未安装 GPU”，不标记为枚举失败 |
+| 单张 GPU 读取失败 | 该卡 `unavailable`，其他卡正常；该卡不计入 GPU 总和 |
+| APU 被检测到 | 仍展示功率/温度等指标，`include_in_system_total=false`，避免与 RAPL 重复计算 |
 | GPU 热插拔 / 顺序变化 | 以 UUID 为准；新增卡建基线，旧卡移除 |
 | 温度传感器缺失 | 温度 `unavailable`，不用其他值替代 |
 | 风扇不支持（Tesla） | `fan_speed=unavailable`，正常现象 |
@@ -810,6 +837,12 @@ Web UI 位于根路径 `/`、`/cpu`、`/gpu`、`/energy`；服务元数据位于
   - 风扇 NotSupported → `unavailable`；
   - NVML 初始化失败 → 退避重试，服务不崩；
   - 卡顺序变化后 UUID 仍正确。
+- **AMD GPU / 温度**（临时 sysfs）：
+  - `power1_average` / `power1_input` µW 转换；
+  - APU 排除与配置覆盖；
+  - 非 AMD 设备跳过、缺失指标 `unavailable`；
+  - NVIDIA + AMD 混合枚举与 index 重排；
+  - `k10temp` 多 hwmon 到 package id 的映射。
 - **计算器**：
   - 电表健康 → `measured/wall`；
   - 电表离线 → `estimated/dc_components` + `meter offline`；
@@ -1065,7 +1098,7 @@ Web UI 位于根路径 `/`、`/cpu`、`/gpu`、`/energy`；服务元数据位于
 | RAPL 权限 | 本机 `energy_uj` 仅 root | systemd capability 或 root；采集器明确降级 |
 | RAPL 语义 | 无 DRAM 域，package 是否含 DRAM 不确定 | 不作声明；只报 package |
 | 估算偏差 | DC 组件和 ≠ 墙插功率 | UI 展示 `scope`；电表实测优先 |
-| other_components 默认值 | 80 W 对本机明显偏低 | 默认 150 W，可配置并标注 |
+| other_components 默认值 | 固定常数对未知硬件可能明显偏差 | 默认按硬件自动建议并公开明细；可写入固定值覆盖 |
 | NVML 版本 | 曾出现内核模块/用户态 mismatch；重启后加载 580.178.04，2 张 V100 已真机验证 | 驱动升级后跑 `pm doctor` 与 `nvidia-smi` 复核 |
 | GPU 风扇 | Tesla 无风扇转速 | 标记 unavailable，不显示 0 |
 | 无认证 | MVP 局域网内无鉴权 | 绑定内网/防火墙；后续加 token |

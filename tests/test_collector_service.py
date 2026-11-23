@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from app.config import AppConfig, CollectorConfig, DatabaseConfig, PowerConfig
-from app.domain import CpuSnapshot, Quality, measured, unavailable
+from app.domain import CpuSnapshot, DiskUsage, Quality, measured, unavailable
 from app.power.adapters.base import MeterReading
 from app.power.calculator import MeterState
 from app.services.collector_service import CollectorService
@@ -23,6 +23,23 @@ from tests.fakes import (
 )
 
 
+def disk_snapshot(device: str = "/dev/nvme0n1") -> DiskUsage:
+    value = measured(0, "B", "test", NOW)
+    rate = measured(0.0, "MB/s", "test", NOW)
+    return DiskUsage(
+        device=device,
+        mountpoint="/",
+        total=value,
+        used=value,
+        free=value,
+        usage_percent=measured(0.0, "%", "test", NOW),
+        read_mbps=rate,
+        write_mbps=rate,
+        read_iops=rate,
+        write_iops=rate,
+    )
+
+
 def make_service(
     *,
     clock,
@@ -38,6 +55,7 @@ def make_service(
     cfg = cfg or AppConfig(
         collector=CollectorConfig(system_interval=0.05),
         database=DatabaseConfig(path="unused.db", write_interval=1.0),
+        power=PowerConfig(estimated_other_power_w=150.0),
     )
     store = store or StateStore(clock=clock, now=lambda: NOW)
     bus = bus or EventBus()
@@ -393,6 +411,35 @@ def test_diagnostics_reports_probe_state(fake_clock) -> None:
     assert diagnostics["rapl"]["source_mode"] == "helper"
     assert "collectors" in diagnostics
     assert "database" in diagnostics
+    assert diagnostics["gpu"]["amdgpu_initialized"] is True
+    assert diagnostics["other_power"]["configured_w"] == 150.0
+
+
+def test_auto_other_power_suggestion_is_used_and_exposed(fake_clock) -> None:
+    cfg = AppConfig(
+        collector=CollectorConfig(system_interval=0.05),
+        database=DatabaseConfig(path="unused.db", write_interval=1.0),
+        power=PowerConfig(),
+    )
+    service, store, _, _ = make_service(clock=fake_clock, cfg=cfg)
+    store.update("cpu", cpu_snapshot(100.0))
+    store.update("gpu", (gpu_snapshot(power_w=50.0),))
+    store.update("gpu_available", True)
+    store.update("memory", memory_snapshot())
+    store.update("disk", (disk_snapshot("/dev/nvme0n1"),))
+
+    snapshot = service.build_snapshot()
+
+    assert snapshot.system_power.other_power_source.startswith("auto:")
+    assert snapshot.system_power.other_components_w == pytest.approx(71.7)
+    assert snapshot.system_power.power.value == pytest.approx(221.7)
+    suggestion = store.get("other_power_suggestion")
+    assert suggestion["breakdown"]["board_and_fans"] == 60.0
+    assert suggestion["breakdown"]["disks"] == 4.0
+    payload = snapshot.to_dict()
+    assert payload["system"]["other_power_source"].startswith("auto:")
+    assert "fan_speed_rpm" in payload["gpu"][0]
+    assert payload["gpu"][0]["include_in_system_total"] is True
 
 
 def test_empty_snapshot_is_safe_before_first_collection(fake_clock) -> None:

@@ -31,7 +31,8 @@ class FakeSmi:
 
 
 def collector(nvml, smi, cfg: AppConfig | None = None) -> GpuCollector:
-    return GpuCollector(cfg or AppConfig(), nvml=nvml, smi=smi)
+    cfg = cfg or AppConfig(gpu=GpuConfig(backends=["nvidia"]))
+    return GpuCollector(cfg, nvml=nvml, smi=smi)
 
 
 def test_zero_gpus_from_nvml_is_authoritative() -> None:
@@ -63,11 +64,11 @@ def test_successful_smi_with_zero_rows_means_zero_gpus() -> None:
 
 
 def test_fallback_can_be_disabled() -> None:
-    cfg = AppConfig(gpu=GpuConfig(fallback_nvidia_smi=False))
+    cfg = AppConfig(gpu=GpuConfig(fallback_nvidia_smi=False, backends=["nvidia"]))
     nvml = FakeNvml(initialized=False, init_error="boom")
     smi = FakeSmi()
     gpu = collector(nvml, smi, cfg)
     assert gpu.collect() == ()
     assert gpu.available is False
-    assert gpu.error == "boom"
+    assert gpu.error == "nvidia: boom"
     assert smi.sample_calls == 0

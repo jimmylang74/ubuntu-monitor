@@ -49,7 +49,7 @@ def _read_text(path: Path) -> str | None:
 
 
 class RaplAdapter:
-    """Read Intel RAPL energy counters and derive watts.
+    """Read Intel/AMD RAPL powercap counters and derive watts.
 
     Only top-level ``package-*`` domains are considered CPU packages.  Child
     domains (``dram``, ``core``, ...) are exposed for diagnostics but never
@@ -101,10 +101,12 @@ class RaplAdapter:
     def refresh(self) -> None:
         domains: dict[str, RaplDomain] = {}
         if self.root.is_dir():
-            for path in sorted(self.root.glob("intel-rapl:*")):
-                if not path.is_dir():
-                    continue
-                domain_id = path.name
+            paths: dict[str, Path] = {}
+            for control_type in self.cfg.control_types:
+                for path in self.root.glob(f"{control_type}:*"):
+                    if path.is_dir():
+                        paths[path.name] = path
+            for domain_id, path in sorted(paths.items()):
                 name = _read_text(path / "name") or domain_id
                 max_raw = _read_text(path / "max_energy_range_uj")
                 try:

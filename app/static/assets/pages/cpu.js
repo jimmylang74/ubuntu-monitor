@@ -115,7 +115,7 @@ function renderCpu(snapshot) {
     digits: 1,
     fallbackUnit: "°C",
   });
-  text(document.getElementById("cpu-temp-sub"), "hwmon coretemp");
+  text(document.getElementById("cpu-temp-sub"), "hwmon coretemp / k10temp");
 
   text(document.getElementById("cpu-sockets"), cpu?.socket_count ?? "—");
   if (cpu?.packages?.length) {

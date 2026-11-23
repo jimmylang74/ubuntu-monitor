@@ -91,8 +91,10 @@ def _gpu_dict(gpu: GpuSnapshot) -> dict[str, Any]:
         "memory_used": gpu.memory_used.to_dict(),
         "memory_total": gpu.memory_total.to_dict(),
         "fan_speed": gpu.fan_speed.to_dict(),
+        "fan_speed_rpm": gpu.fan_speed_rpm.to_dict(),
         "core_clock": gpu.core_clock.to_dict(),
         "memory_clock": gpu.memory_clock.to_dict(),
+        "include_in_system_total": gpu.include_in_system_total,
     }
 
 
@@ -204,6 +206,7 @@ class Snapshot:
             "system": {
                 "power": power,
                 "other_components_w": system_power.other_components_w,
+                "other_power_source": system_power.other_power_source,
                 "energy": _measurement(self.energy_wh),
             },
             "cpu": _cpu_dict(self.cpu),

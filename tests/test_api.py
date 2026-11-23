@@ -46,7 +46,10 @@ def seed(
 
 @pytest.fixture
 def client(tmp_path: Path):
-    cfg = AppConfig(database=DatabaseConfig(path=str(tmp_path / "api.db")))
+    cfg = AppConfig(
+        database=DatabaseConfig(path=str(tmp_path / "api.db")),
+        power=PowerConfig(estimated_other_power_w=150.0),
+    )
     app = create_app(cfg, start_background=False)
     with TestClient(app) as test_client:
         seed(app.state.runtime)
@@ -105,7 +108,9 @@ def test_power_current_reports_provenance(client) -> None:
     assert system["quality"] == "estimated"
     assert system["scope"] == "dc_components"
     assert system["mode"] == "estimated"
-    assert system["source"] == "calculator:rapl+nvml"
+    assert system["source"] == "calculator:components"
+    assert system["other_components_w"] == pytest.approx(150.0)
+    assert system["other_power_source"] == "config"
     assert payload["cpu"]["value"] == pytest.approx(100.0)
     assert payload["gpu"][0]["power"]["value"] == pytest.approx(50.0)
     # One sample is not enough to integrate energy.
@@ -180,7 +185,7 @@ def test_power_history_endpoint_and_validation(client) -> None:
             "ts_ms": NOW_MS - 1000,
             "system_w": 300.0,
             "system_quality": "estimated",
-            "system_source": "calculator:rapl+nvml",
+            "system_source": "calculator:components",
             "system_scope": "dc_components",
             "cpu_w": 100.0,
             "cpu_quality": "measured",
@@ -247,12 +252,18 @@ def test_config_and_diagnostics(client) -> None:
     assert config.status_code == 200
     assert config.json()["server"]["port"] == 8010
     assert config.json()["power"]["estimated_other_power_w"] == pytest.approx(150.0)
+    assert config.json()["power"]["last_suggestion"] is None
+    assert config.json()["gpu"]["backends"] == ["nvidia", "amdgpu"]
+    assert config.json()["gpu"]["amdgpu"]["apu_policy"] == "auto"
+    assert config.json()["rapl"]["control_types"] == ["intel-rapl"]
 
     diagnostics = http.get("/api/v1/diagnostics")
     assert diagnostics.status_code == 200
     payload = diagnostics.json()
     assert "rapl" in payload
     assert "gpu" in payload
+    assert payload["gpu"]["amdgpu_initialized"] is True
+    assert payload["other_power"]["configured_w"] == pytest.approx(150.0)
     assert "collectors" in payload
     assert payload["database"]["tables"]["sample"] >= 0
 

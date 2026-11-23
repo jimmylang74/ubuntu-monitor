@@ -21,9 +21,10 @@ from app.collectors.network import NetworkCollector, filter_interfaces
 from app.collectors.system import SystemCollector
 from app.config import AppConfig, load_config
 from app.domain import Measurement, Quality
+from app.power.adapters.amdgpu import AmdgpuAdapter
 from app.power.adapters.nvidia import NvidiaAdapter, NvidiaSmiAdapter
 from app.power.adapters.rapl import RaplAdapter
-from app.power.calculator import MeterState, compute_system_power
+from app.power.calculator import MeterState, compute_system_power, suggest_other_power_w
 
 
 def _section(title: str) -> None:
@@ -145,13 +146,29 @@ def doctor(cfg: AppConfig) -> int:
     elif smi.error:
         print(f"nvidia-smi unavailable: {smi.error}")
 
-    _section("Temperatures (hwmon coretemp)")
+    _section("AMD GPU (amdgpu hwmon)")
+    amd = AmdgpuAdapter(cfg.gpu)
+    amd_gpus = amd.sample()
+    if amd_gpus:
+        for gpu in amd_gpus:
+            note = "" if gpu.include_in_system_total else "  [APU: CPU power already includes GPU]"
+            print(
+                f"  {gpu.uuid} {gpu.name} power={_fmt_power(gpu.power)} "
+                f"limit={_fmt_power(gpu.power_limit)} temp={_fmt_number(gpu.temperature)} "
+                f"util={_fmt_number(gpu.utilization)} "
+                f"vram={_human_bytes(gpu.memory_used.value)}/{_human_bytes(gpu.memory_total.value)}"
+                f"{note}"
+            )
+    else:
+        print("no AMD GPU hwmon node found")
+
+    _section("Temperatures (hwmon coretemp / k10temp)")
     temperatures = read_package_temperatures()
     if temperatures:
         for package_id, value in sorted(temperatures.items()):
             print(f"package-{package_id}: {value:.1f} °C")
     else:
-        print("no coretemp package temperature found")
+        print("no CPU package temperature found")
 
     _section("Memory / disks / network")
     memory = psutil.virtual_memory()
@@ -182,8 +199,11 @@ def doctor(cfg: AppConfig) -> int:
         f"memory={cfg.collector.memory_interval}s disk={cfg.collector.disk_interval}s "
         f"network={cfg.collector.network_interval}s"
     )
+    other = (
+        "auto" if cfg.power.estimated_other_power_w is None else f"{cfg.power.estimated_other_power_w} W"
+    )
     print(
-        f"power: mode={cfg.power.mode} other_components={cfg.power.estimated_other_power_w} W "
+        f"power: mode={cfg.power.mode} other_components={other} "
         f"strict_estimate={cfg.power.strict_estimate}"
     )
     print(f"electricity: enabled={cfg.electricity.enabled} price={cfg.electricity.price_per_kwh} "
@@ -204,8 +224,11 @@ def check(cfg: AppConfig) -> int:
     meter = cfg.power.external_meter
     print(f"external meter: enabled={meter.enabled} type={meter.type} "
           f"interval={meter.interval}s failover_after={meter.failover_after}")
+    other = (
+        "auto" if cfg.power.estimated_other_power_w is None else f"{cfg.power.estimated_other_power_w} W"
+    )
     print(f"power: mode={cfg.power.mode} strict_estimate={cfg.power.strict_estimate} "
-          f"other_components={cfg.power.estimated_other_power_w} W")
+          f"other_components={other}")
     return 0
 
 
@@ -224,8 +247,25 @@ def _print_sample(
     cpu = cpu_collector.collect()
     gpus = gpu_collector.collect()
     networks = network_collector.collect()
-    memory = memory_collector.collect() if show_memory else None
-    disks = disk_collector.collect() if show_disk else ()
+    # Always refresh memory/disk inventory for the auto other-power suggestion;
+    # only the detailed printout follows the display throttling.
+    memory = memory_collector.collect()
+    disks = disk_collector.collect()
+    displayed_memory = memory if show_memory else None
+    displayed_disks = disks if show_disk else ()
+
+    other_w = cfg.power.estimated_other_power_w
+    other_source: str | None = None
+    if other_w is None:
+        disk_names = tuple(sorted({Path(d.device).name for d in disks if d.device}))
+        suggestion = suggest_other_power_w(
+            sockets=cpu.socket_count,
+            memory_bytes=int(memory.total.value) if memory and memory.total.value is not None else None,
+            disk_devices=disk_names,
+            gpu_count=len(gpus),
+        )
+        other_w = suggestion.watts
+        other_source = f"auto:{suggestion.basis}"
 
     meter_state = MeterState(enabled=cfg.power.external_meter.enabled, healthy=False)
     system = compute_system_power(
@@ -236,6 +276,8 @@ def _print_sample(
         cfg.power,
         cpu.timestamp,
         gpu_available=gpu_collector.available,
+        other_components_w=other_w,
+        other_power_source=other_source,
     )
 
     stamp = cpu.timestamp.astimezone().strftime("%H:%M:%S")
@@ -245,9 +287,10 @@ def _print_sample(
         meter_note = "  [meter offline]"
     elif system.meter_status == "disabled":
         meter_note = "  [meter disabled]"
+    other_label = "auto" if system.other_power_source.startswith("auto:") else "config"
     print(
         f"[{stamp}] #{sequence} System {_fmt_power(system.power)}"
-        f"{scope}{meter_note}  (other components constant: {system.other_components_w:.0f} W)"
+        f"{scope}{meter_note}  (other components {other_label}: {system.other_components_w:.0f} W)"
     )
 
     gpu_power = ", ".join(_fmt_power(g.power) for g in gpus) if gpus else "none"
@@ -271,18 +314,19 @@ def _print_sample(
             f"mem {_human_bytes(gpu.memory_used.value)}/{_human_bytes(gpu.memory_total.value)}  "
             f"fan {_fmt_number(gpu.fan_speed)}"
         )
-    if memory is not None:
+    if displayed_memory is not None:
         print(
-            f"    MEM {_fmt_number(memory.usage_percent)}  "
-            f"{_human_bytes(memory.used.value)}/{_human_bytes(memory.total.value)}  "
-            f"swap {_human_bytes(memory.swap_used.value)}/{_human_bytes(memory.swap_total.value)}"
+            f"    MEM {_fmt_number(displayed_memory.usage_percent)}  "
+            f"{_human_bytes(displayed_memory.used.value)}/{_human_bytes(displayed_memory.total.value)}  "
+            f"swap {_human_bytes(displayed_memory.swap_used.value)}/"
+            f"{_human_bytes(displayed_memory.swap_total.value)}"
         )
     if networks:
         net_text = "  ".join(
             f"{n.name} rx {_fmt_number(n.rx_mbps)} tx {_fmt_number(n.tx_mbps)}" for n in networks
         )
         print(f"    NET {net_text}")
-    for disk in disks:
+    for disk in displayed_disks:
         print(
             f"    DISK {disk.device} @ {disk.mountpoint}  "
             f"{_human_bytes(disk.used.value)}/{_human_bytes(disk.total.value)} "

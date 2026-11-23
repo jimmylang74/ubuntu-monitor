@@ -207,7 +207,7 @@ jimmy ALL=(root) NOPASSWD: /usr/local/lib/power-monitor/rapl-read
 |---|---|---|
 | D1 | 服务运行身份（RAPL 权限） | 以 `jimmy` 运行；只读 helper + `NOPASSWD`，不保存密码 |
 | D2 | GPU 驱动修复时机 | 已重启修复；2026-11-18 真机验证 2 张 V100 正常 |
-| D3 | `estimated_other_power_w` 默认值 | `150 W`（配置常量，不是实测；UI 标 `Estimated`） |
+| D3 | `estimated_other_power_w` 默认值 | 默认留空，按 socket/内存/磁盘自动建议；写固定值则覆盖；均非实测 |
 | D4 | Python 环境 | 项目内 `.venv`，`scripts/run.sh` 负责激活 |
 | D5 | 监听地址/端口 | `0.0.0.0:8010` |
 

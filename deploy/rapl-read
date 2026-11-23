@@ -1,10 +1,12 @@
 #!/bin/sh
-# Read Intel RAPL energy counters as root and emit tab-separated records.
-# Installed root-owned; invoked by the power-monitor service user via sudo -n.
+# Read powercap energy counters as root and emit tab-separated records.
+# Mainline Linux also registers AMD Zen RAPL under intel-rapl:*, so no vendor
+# check is needed here.  Installed root-owned; invoked via sudo -n.
 set -eu
 
-for d in /sys/class/powercap/intel-rapl:*; do
+for d in /sys/class/powercap/*:*; do
     [ -d "$d" ] || continue
+    [ -f "$d/energy_uj" ] || continue
     id=${d##*/}
     name=$(cat "$d/name" 2>/dev/null || printf '')
     energy=$(cat "$d/energy_uj" 2>/dev/null || printf '')

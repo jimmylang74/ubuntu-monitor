@@ -328,7 +328,7 @@ export function gpuTotalMeasurement(snapshot) {
       value: null,
       unit: "W",
       quality: "unavailable",
-      source: "nvml",
+      source: "gpu",
       timestamp,
       error: snapshot?.gpu_error || "GPU enumeration unavailable",
       missing: ["gpu"],
@@ -340,23 +340,34 @@ export function gpuTotalMeasurement(snapshot) {
       value: 0,
       unit: "W",
       quality: "measured",
-      source: "nvml:no-devices",
+      source: "gpu:none-in-total",
+      timestamp,
+      missing: [],
+    };
+  }
+  const counted = gpus.filter((gpu) => gpu?.include_in_system_total !== false);
+  if (counted.length === 0) {
+    return {
+      value: 0,
+      unit: "W",
+      quality: "measured",
+      source: "gpu:none-in-total",
       timestamp,
       missing: [],
     };
   }
   let total = 0;
-  for (const gpu of gpus) {
+  for (const gpu of counted) {
     const power = gpu?.power;
     if (!isNumber(power?.value) || power.quality !== "measured") {
       return {
         value: null,
         unit: "W",
         quality: "unavailable",
-        source: "nvml:sum",
+        source: "gpu:sum",
         timestamp,
         error: `GPU ${gpu?.uuid || ""} power unavailable`,
-        missing: gpus.map((item) => `gpu:${item.uuid}`),
+        missing: counted.map((item) => `gpu:${item.uuid}`),
       };
     }
     total += power.value;
@@ -365,7 +376,7 @@ export function gpuTotalMeasurement(snapshot) {
     value: total,
     unit: "W",
     quality: "measured",
-    source: "nvml:sum",
+    source: "gpu:sum",
     timestamp,
     missing: [],
   };

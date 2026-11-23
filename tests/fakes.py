@@ -111,6 +111,11 @@ class FakeNvml:
     init_error = "driver/library version mismatch"
 
 
+class FakeAmdgpu:
+    initialized = True
+    init_error = None
+
+
 class FakeCpuCollector(FakeCollector):
     rapl = FakeRapl()
 
@@ -121,6 +126,7 @@ class FakeGpuCollector(FakeCollector):
         self.available = available
         self.error = error
         self.nvml = FakeNvml()
+        self.amdgpu = FakeAmdgpu()
 
     def close(self) -> None:
         pass

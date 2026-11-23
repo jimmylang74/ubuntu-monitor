@@ -7,12 +7,16 @@ aggregates, the inputs that were missing.  ``unavailable`` always means
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
+
+
+def _unknown(unit: str) -> Measurement["float"]:
+    return unavailable(unit, "none", datetime(1970, 1, 1, tzinfo=UTC))
 
 
 class Quality(StrEnum):
@@ -126,6 +130,12 @@ class GpuSnapshot:
     fan_speed: Measurement[float]
     core_clock: Measurement[float]
     memory_clock: Measurement[float]
+    # AMD hwmon reports fan RPM; keep the existing percentage field for the UI
+    # while exposing the raw value when fan1_max is unavailable.
+    fan_speed_rpm: Measurement[float] = field(default_factory=lambda: _unknown("rpm"))
+    # An APU's hwmon power reading already includes the CPU package.  Such a
+    # GPU must not be added to RAPL again in the component-sum estimate.
+    include_in_system_total: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +181,8 @@ class SystemPower:
     meter_status: str | None
     last_meter_at: datetime | None
     scope: str | None
+    # "config" or "auto:<basis>".  Always exposed so an estimate is traceable.
+    other_power_source: str = "config"
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,5 +11,6 @@ data/*.db-shm
 backups/
 logs/*.log
 first-time-development-2026-11-18.md
+add_AMD_CPU_GPU_support.md
 
 

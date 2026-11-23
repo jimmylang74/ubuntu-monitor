@@ -122,6 +122,12 @@ function renderGpuCards(snapshot) {
       stat("核心时钟", gpu.core_clock, (value) => formatFixed(value, 0), "MHz"),
       stat("显存时钟", gpu.memory_clock, (value) => formatFixed(value, 0), "MHz"),
     );
+    if (measurementValue(gpu.fan_speed_rpm) !== null) {
+      stats.append(stat("风扇转速", gpu.fan_speed_rpm, (value) => formatFixed(value, 0), "rpm"));
+    }
+    if (gpu.include_in_system_total === false) {
+      card.append(createEl("div", "gpu-card__sub", "APU：功率已计入 CPU，不参与整机求和"));
+    }
 
     const memory = createEl("div", "stat");
     memory.append(createEl("div", "stat__label", "显存已用 / 总量"));

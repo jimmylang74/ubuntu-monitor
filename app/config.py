@@ -41,15 +41,34 @@ class CollectorConfig(_Base):
     timeout: float = Field(default=2.0, gt=0)
 
 
+class AmdgpuConfig(_Base):
+    # auto: exclude cards that look like APUs (their hwmon power already
+    # includes the CPU package); include/exclude: force the decision.
+    apu_policy: Literal["auto", "include", "exclude"] = "auto"
+    # In auto mode, dedicated VRAM at or below this value suggests an APU.
+    apu_vram_limit_gb: float = Field(default=2.0, ge=0)
+
+
 class GpuConfig(_Base):
     fallback_nvidia_smi: bool = True
     reinit_interval: float = Field(default=10.0, gt=0)
     expose_fan: bool = True
+    # Backends are tried independently so mixed NVIDIA + AMD hosts are supported.
+    backends: list[Literal["nvidia", "amdgpu"]] = Field(
+        default_factory=lambda: ["nvidia", "amdgpu"]
+    )
+    # False: at least one healthy backend is enough.  True: any backend failure
+    # makes gpu_available=False (useful for alerting on a broken driver).
+    require_all_backends: bool = False
+    amdgpu: AmdgpuConfig = Field(default_factory=AmdgpuConfig)
 
 
 class RaplConfig(_Base):
     helper: str = "/usr/local/lib/power-monitor/rapl-read"
     use_sudo: Literal["auto", "always", "never"] = "auto"
+    # Mainline Linux registers AMD Zen RAPL under the "intel-rapl" powercap
+    # control type too.  Add other powercap prefixes here if your kernel does.
+    control_types: list[str] = Field(default_factory=lambda: ["intel-rapl"])
     max_plausible_w: float = Field(default=1500.0, gt=0)
     min_interval_s: float = Field(default=0.2, gt=0)
 
@@ -95,7 +114,9 @@ class ExternalMeterConfig(_Base):
 
 class PowerConfig(_Base):
     mode: Literal["auto", "estimated", "external"] = "auto"
-    estimated_other_power_w: float = Field(default=150.0, ge=0)
+    # None means "derive a suggestion from detected hardware at runtime".
+    # An explicit number always wins and is reported as source="config".
+    estimated_other_power_w: float | None = Field(default=None, ge=0)
     strict_estimate: bool = True
     external_meter: ExternalMeterConfig = Field(default_factory=ExternalMeterConfig)
 

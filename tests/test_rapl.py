@@ -48,6 +48,19 @@ def make_adapter(
     return RaplAdapter(cfg, root=root, clock=clock, now=lambda: now, **kwargs)
 
 
+def test_only_configured_control_types_are_discovered(
+    tmp_path: Path, fake_clock: FakeClock, now: datetime
+) -> None:
+    make_domain(tmp_path, "intel-rapl:0", "package-0", 1_000_000)
+    make_domain(tmp_path, "amd-rapl:0", "package-0", 2_000_000)
+    cfg = RaplConfig(control_types=["amd-rapl"], use_sudo="never")
+    adapter = RaplAdapter(cfg, root=tmp_path, clock=fake_clock, now=lambda: now)
+
+    adapter.refresh()
+
+    assert [domain.domain_id for domain in adapter.all_domains] == ["amd-rapl:0"]
+
+
 def test_first_sample_is_warmup_then_power_is_derived(tmp_path: Path, fake_clock: FakeClock, now: datetime) -> None:
     domain = make_domain(tmp_path, "intel-rapl:0", "package-0", 1_000_000)
     adapter = make_adapter(tmp_path, fake_clock, now)

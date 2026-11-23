@@ -171,13 +171,14 @@ function renderMetrics(snapshot) {
   }
 
   const otherValue = snapshot.system?.other_components_w;
+  const otherSource = snapshot.system?.other_power_source || "config";
   const otherMeasurement = {
     value: isNumber(otherValue) ? otherValue : null,
     unit: "W",
     quality: isNumber(otherValue) ? "estimated" : "unavailable",
-    source: "config:estimated_other_power_w",
+    source: otherSource,
     timestamp: snapshot.timestamp,
-    error: isNumber(otherValue) ? null : "estimated_other_power_w is not configured",
+    error: isNumber(otherValue) ? null : "other_components_w is not available",
     missing: [],
   };
   renderMeasurement({
@@ -187,7 +188,12 @@ function renderMetrics(snapshot) {
     measurement: otherMeasurement,
     digits: 0,
   });
-  text(document.getElementById("other-sub"), "配置常量，不含 PSU 损耗");
+  text(
+    document.getElementById("other-sub"),
+    otherSource.startsWith("auto:")
+      ? "按硬件自动建议，不含 PSU 损耗"
+      : "配置常量，不含 PSU 损耗",
+  );
 
   const energy = snapshot.system?.energy;
   renderMeasurement({

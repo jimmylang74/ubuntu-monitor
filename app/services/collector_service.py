@@ -33,7 +33,7 @@ from app.domain import (
     Quality,
     SystemPower,
 )
-from app.power.calculator import MeterState, compute_system_power
+from app.power.calculator import MeterState, compute_system_power, suggest_other_power_w
 from app.power.adapters.base import MeterReading
 from app.snapshot import Snapshot, empty_system_power
 from app.state import EventBus, StateStore
@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 MAX_ENERGY_DT_S = 30.0
 MAX_METER_ENERGY_DELTA_WH = 5_000.0
+
+
+def _disk_device_name(disk: Any) -> str:
+    return str(getattr(disk, "device", "")).rsplit("/", 1)[-1]
 
 
 @dataclass(slots=True)
@@ -300,6 +304,25 @@ class CollectorService:
         meter_status: dict[str, Any] | None = self.store.get("meter_status")
         meter_power = meter_reading.power if meter_reading is not None else None
 
+        other_w: float | None = None
+        other_source: str | None = None
+        suggestion = None
+        if self.cfg.power.estimated_other_power_w is None:
+            memory = self.store.get("memory")
+            disks: tuple[Any, ...] = tuple(self.store.get("disk") or ())
+            disk_devices = tuple(sorted({_disk_device_name(d) for d in disks if _disk_device_name(d)}))
+            suggestion = suggest_other_power_w(
+                sockets=cpu.socket_count if cpu else 1,
+                memory_bytes=(
+                    int(memory.total.value) if memory and memory.total.value is not None else None
+                ),
+                disk_devices=disk_devices,
+                gpu_count=len(gpus),
+            )
+            other_w = suggestion.watts
+            other_source = f"auto:{suggestion.basis}"
+        self.store.update("other_power_suggestion", suggestion.to_dict() if suggestion else None)
+
         system_power = compute_system_power(
             cpu,
             gpus,
@@ -308,6 +331,8 @@ class CollectorService:
             self.cfg.power,
             timestamp,
             gpu_available=gpu_available,
+            other_components_w=other_w,
+            other_power_source=other_source,
         )
         energy = self._integrate_energy(system_power, timestamp, meter_reading)
 
@@ -457,6 +482,7 @@ class CollectorService:
         """
         rapl = self.cpu.rapl
         nvml = self.gpu.nvml
+        amdgpu = self.gpu.amdgpu
         gpus = [
             {
                 "uuid": gpu.uuid,
@@ -465,6 +491,7 @@ class CollectorService:
                 "pci_bus_id": gpu.pci_bus_id,
                 "power_w": gpu.power.value,
                 "power_quality": gpu.power.quality.value,
+                "include_in_system_total": gpu.include_in_system_total,
             }
             for gpu in (self.store.get("gpu") or ())
         ]
@@ -489,9 +516,15 @@ class CollectorService:
             "gpu": {
                 "available": bool(self.store.get("gpu_available", False)),
                 "error": self.store.get("gpu_error"),
+                "backends": list(self.cfg.gpu.backends),
                 "nvml_initialized": nvml.initialized,
                 "nvml_error": nvml.init_error,
+                "amdgpu_initialized": amdgpu.initialized,
                 "gpus": gpus,
+            },
+            "other_power": {
+                "configured_w": self.cfg.power.estimated_other_power_w,
+                "suggestion": self.store.get("other_power_suggestion"),
             },
             "collectors": self.health_dict(),
             "database": self.writer.status(),

@@ -89,6 +89,7 @@ def power_current(request: Request) -> dict[str, Any]:
             "scope": system_power.scope,
             "mode": system_power.mode,
             "other_components_w": system_power.other_components_w,
+            "other_power_source": system_power.other_power_source,
             "missing_components": list(system_power.missing_components),
             "meter_status": system_power.meter_status,
             "last_meter_at": (
@@ -202,7 +203,8 @@ def energy_summary(request: Request) -> dict[str, Any]:
 
 @router.get("/config")
 def config(request: Request) -> dict[str, Any]:
-    cfg = _runtime(request).config
+    runtime = _runtime(request)
+    cfg = runtime.config
     return {
         "version": __version__,
         "server": {
@@ -214,16 +216,21 @@ def config(request: Request) -> dict[str, Any]:
         "gpu": {
             "fallback_nvidia_smi": cfg.gpu.fallback_nvidia_smi,
             "reinit_interval": cfg.gpu.reinit_interval,
+            "backends": list(cfg.gpu.backends),
+            "require_all_backends": cfg.gpu.require_all_backends,
+            "amdgpu": cfg.gpu.amdgpu.model_dump(),
         },
         "rapl": {
             "helper": cfg.rapl.helper,
             "use_sudo": cfg.rapl.use_sudo,
+            "control_types": list(cfg.rapl.control_types),
             "max_plausible_w": cfg.rapl.max_plausible_w,
         },
         "power": {
             "mode": cfg.power.mode,
             "estimated_other_power_w": cfg.power.estimated_other_power_w,
             "strict_estimate": cfg.power.strict_estimate,
+            "last_suggestion": runtime.store.get("other_power_suggestion"),
             "external_meter": {
                 "enabled": cfg.power.external_meter.enabled,
                 "type": cfg.power.external_meter.type,

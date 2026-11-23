@@ -19,6 +19,22 @@ Python 3.12 + FastAPI 的服务器功耗监控系统。当前处于 **Phase 5：
 - [架构设计](docs/ARCHITECTURE.md)
 - [配置示例](config/config.example.yaml)
 
+## 硬件支持
+
+| 部件 | 支持情况 |
+|---|---|
+| Intel CPU 功率/能耗 | RAPL（`/sys/class/powercap/intel-rapl:*`），权限不足时用只读 helper |
+| AMD Zen CPU 功率/能耗 | Linux 主线同样注册为 `intel-rapl:*`（Zen 1–5，取决于内核版本），代码无需按厂商分支 |
+| CPU 温度 | Intel `coretemp` 与 AMD `k10temp`（`Tctl`/`Tdie`） |
+| NVIDIA GPU | NVML，失败时回退 `nvidia-smi` |
+| AMD GPU | `amdgpu`/`radeon` hwmon：功率、上限、温度、利用率、显存、时钟、风扇 |
+| 混合 NVIDIA + AMD GPU | 两个后端独立枚举；`gpu.backends` 可单独启用/关闭 |
+| 整机实测功率 | 外部电表（Shelly / Modbus / HTTP PDU），与 CPU/GPU 厂商无关 |
+
+APU 的 hwmon 功率通常已包含 CPU package，默认会从整机分项求和中排除，但仍会展示数据；
+可用 `gpu.amdgpu.apu_policy` 覆盖。未直接测量的主板/内存/风扇/磁盘/网卡功率默认按检测到的
+硬件自动给出建议值，写入 `power.estimated_other_power_w` 可固定为你自己的数值。
+
 ## 快速开始
 
 ```bash
@@ -48,8 +64,8 @@ sudo ./scripts/install-service.sh
 ```
 
 `scripts/run.sh` 会激活项目内 `.venv` 后运行程序。服务默认监听 `0.0.0.0:8010`。
-编辑 `config/config.yaml` 修改端口、采集周期、`estimated_other_power_w` 等配置；
-`config/config.example.yaml` 是带注释的完整示例。
+编辑 `config/config.yaml` 修改端口、采集周期、`power.estimated_other_power_w` 等配置；
+该值留空时会自动给出建议值。`config/config.example.yaml` 是带注释的完整示例。
 
 服务启动后：
 
@@ -97,7 +113,7 @@ journalctl -u power-monitor -f
 | `GET /api/v1/energy/daily?days=7` | 按本地时区切分的每日能耗与费用 |
 | `GET /api/v1/energy/weekly` / `monthly` / `summary` | 固定窗口与今日/昨日/7 天/30 天汇总 |
 | `GET /api/v1/config` | 当前生效配置（只读，不含敏感信息） |
-| `GET /api/v1/diagnostics` | RAPL 域/权限、NVML 状态、采集器健康、表行数 |
+| `GET /api/v1/diagnostics` | RAPL 域/权限、NVML/AMD GPU 状态、采集器健康、表行数 |
 | `WS /ws/realtime` | 连接后收到 `hello` + 完整快照，之后每秒推送；20 s 无数据发 `ping` |
 
 历史窗口：`5m`、`15m`、`1h` 读取原始样本；`6h`、`24h` 读取 1 分钟聚合（无聚合时回退原始样本）；
@@ -165,7 +181,7 @@ power:
     interval: 1.0         # 轮询间隔（秒）
     failover_after: 3     # 连续失败多少次后退回估算
     shelly:
-      url: "http://192.168.1.60"
+      url: ""             # 换成你的电表地址
       generation: auto    # auto | gen1 | gen2
 ```
 
@@ -263,8 +279,8 @@ power:
 
 所有功耗值包含 `value / unit / quality / source / timestamp`：
 
-- `measured`：直接来自 RAPL、NVML、psutil 或外部电表
-- `estimated`：实测组件求和 + 配置常量（如 `estimated_other_power_w`）
+- `measured`：直接来自 RAPL、NVML、AMD hwmon、psutil 或外部电表
+- `estimated`：实测组件求和 + 自动建议值或 `power.estimated_other_power_w`；`other_power_source` 标明来源
 - `unavailable`：无法得出，值为 `null`，绝不用 0 代替。
 
 系统功率额外携带 `scope`：`estimated` 的 `scope=dc_components`（DC 组件之和，不含 PSU 损耗）；

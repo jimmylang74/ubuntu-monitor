@@ -26,13 +26,17 @@ echo "installed for user: $TARGET_USER"
 
 # Verify through the same path the service uses: the target user runs the
 # helper via `sudo -n`.  Running the helper directly as that user would return
-# empty energy values because energy_uj is root-only.
+# empty energy values because energy_uj is root-only.  The helper scans every
+# powercap `*:*` domain, so AMD Zen RAPL is covered as well.
 if ! output=$(sudo -u "$TARGET_USER" -n sudo -n /usr/local/lib/power-monitor/rapl-read); then
     echo "warning: $TARGET_USER cannot execute the RAPL helper via sudo -n" >&2
     exit 1
 fi
-if ! printf '%s\n' "$output" | awk -F '\t' 'NF >= 3 && $3 ~ /^[0-9]+$/ {found=1} END {exit !found}'; then
-    echo "warning: helper ran but returned no energy values" >&2
-    exit 1
+if printf '%s\n' "$output" | awk -F '\t' 'NF >= 3 && $3 ~ /^[0-9]+$/ {found=1} END {exit !found}'; then
+    echo "RAPL helper verified for user: $TARGET_USER"
+else
+    # A VM, ARM host or kernel without powercap simply exposes no counters.
+    # Installation itself succeeded; CPU power will be reported unavailable.
+    echo "warning: helper installed, but this host exposes no powercap energy counters" >&2
+    echo "         CPU power will be unavailable; GPU and other collectors still work" >&2
 fi
-echo "RAPL helper verified for user: $TARGET_USER"

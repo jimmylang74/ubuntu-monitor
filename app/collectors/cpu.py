@@ -32,6 +32,12 @@ class PackageTopology:
     core_ids: tuple[int, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PackageTemperature:
+    value: float
+    source: str
+
+
 def read_topology(root: Path = CPU_ROOT) -> dict[int, PackageTopology]:
     packages: dict[int, dict[str, object]] = {}
     if not root.is_dir():
@@ -65,29 +71,81 @@ def read_topology(root: Path = CPU_ROOT) -> dict[int, PackageTopology]:
     return result
 
 
-def read_package_temperatures(hwmon_root: Path = HWMON_ROOT) -> dict[int, float]:
-    temperatures: dict[int, float] = {}
+def read_package_temperature_sources(
+    hwmon_root: Path = HWMON_ROOT,
+    package_ids: tuple[int, ...] | None = None,
+) -> dict[int, PackageTemperature]:
+    """Read Intel ``coretemp`` and AMD ``k10temp`` package temperatures.
+
+    Intel labels carry an explicit package id.  AMD exposes one ``k10temp``
+    hwmon device per socket with ``Tctl``/``Tdie`` labels, so multiple devices
+    are mapped to sorted package ids from the CPU topology.
+    """
+    temperatures: dict[int, PackageTemperature] = {}
     if not hwmon_root.is_dir():
         return temperatures
+
+    k10_devices: list[float] = []
     for hwmon in sorted(hwmon_root.glob("hwmon*")):
         try:
             sensor_name = (hwmon / "name").read_text().strip()
         except OSError:
             continue
-        if sensor_name != "coretemp":
-            continue
-        for label_file in sorted(hwmon.glob("temp*_label")):
-            label = label_file.read_text().strip()
-            if not label.startswith("Package id "):
-                continue
-            try:
-                package_id = int(label.removeprefix("Package id "))
-                raw = int(label_file.with_name(label_file.name.replace("_label", "_input")).read_text().strip())
-            except (OSError, ValueError):
-                continue
-            value = raw / 1000.0
-            temperatures[package_id] = max(temperatures.get(package_id, value), value)
+
+        if sensor_name == "coretemp":
+            for label_file in sorted(hwmon.glob("temp*_label")):
+                try:
+                    label = label_file.read_text().strip()
+                except OSError:
+                    continue
+                if not label.startswith("Package id "):
+                    continue
+                try:
+                    package_id = int(label.removeprefix("Package id "))
+                    raw = int(
+                        label_file.with_name(label_file.name.replace("_label", "_input")).read_text().strip()
+                    )
+                except (OSError, ValueError):
+                    continue
+                value = raw / 1000.0
+                current = temperatures.get(package_id)
+                if current is None or value > current.value:
+                    temperatures[package_id] = PackageTemperature(value, "hwmon:coretemp")
+        elif sensor_name == "k10temp":
+            values: list[float] = []
+            for label_file in sorted(hwmon.glob("temp*_label")):
+                try:
+                    label = label_file.read_text().strip()
+                except OSError:
+                    continue
+                if label not in {"Tctl", "Tdie", "Tccd"} and not label.startswith("Tccd"):
+                    continue
+                try:
+                    raw = int(
+                        label_file.with_name(label_file.name.replace("_label", "_input")).read_text().strip()
+                    )
+                except (OSError, ValueError):
+                    continue
+                values.append(raw / 1000.0)
+            if values:
+                k10_devices.append(max(values))
+
+    if k10_devices:
+        ids = package_ids or tuple(range(len(k10_devices)))
+        for index, value in enumerate(k10_devices):
+            package_id = ids[index] if index < len(ids) else index
+            current = temperatures.get(package_id)
+            if current is None or value > current.value:
+                temperatures[package_id] = PackageTemperature(value, "hwmon:k10temp")
     return temperatures
+
+
+def read_package_temperatures(hwmon_root: Path = HWMON_ROOT) -> dict[int, float]:
+    """Backwards-compatible value-only view used by CLI diagnostics."""
+    return {
+        package_id: item.value
+        for package_id, item in read_package_temperature_sources(hwmon_root).items()
+    }
 
 
 def read_cpu_model() -> str:
@@ -166,7 +224,9 @@ class CpuCollector:
     def collect(self) -> CpuSnapshot:
         timestamp = self._now()
         rapl_samples = {sample.name: sample for sample in self._adapter.sample()}
-        temperatures = read_package_temperatures(self._hwmon_root)
+        temperatures = read_package_temperature_sources(
+            self._hwmon_root, tuple(sorted(self._topology))
+        )
         usage_values = list(self._usage_provider())
 
         package_ids = sorted(set(self._topology) | _package_ids(rapl_samples))
@@ -188,10 +248,14 @@ class CpuCollector:
                 )
 
             if package_id in temperatures:
-                temperature = measured(temperatures[package_id], "°C", "hwmon:coretemp", timestamp)
+                item = temperatures[package_id]
+                temperature = measured(item.value, "°C", item.source, timestamp)
             else:
                 temperature = unavailable(
-                    "°C", "hwmon:coretemp", timestamp, error=f"no coretemp 'Package id {package_id}' reading"
+                    "°C",
+                    "hwmon",
+                    timestamp,
+                    error=f"no coretemp/k10temp reading for package {package_id}",
                 )
 
             frequency_value = _read_frequency_mhz(cpu_indices, self._cpu_root)
@@ -232,11 +296,17 @@ class CpuCollector:
         else:
             usage_total = unavailable("%", "psutil:cpu_percent", timestamp, error="no CPU usage samples")
 
-        temps = [p.temperature.value for p in package_tuple if p.temperature.value is not None]
-        if temps:
-            max_temp = measured(max(temps), "°C", "hwmon:coretemp", timestamp)
+        temp_packages = [p for p in package_tuple if p.temperature.value is not None]
+        if temp_packages:
+            hottest = max(temp_packages, key=lambda p: float(p.temperature.value or 0.0))
+            max_temp = measured(
+                float(hottest.temperature.value or 0.0),
+                "°C",
+                hottest.temperature.source,
+                timestamp,
+            )
         else:
-            max_temp = unavailable("°C", "hwmon:coretemp", timestamp, error="no CPU package temperature")
+            max_temp = unavailable("°C", "hwmon", timestamp, error="no CPU package temperature")
 
         return CpuSnapshot(
             timestamp=timestamp,
